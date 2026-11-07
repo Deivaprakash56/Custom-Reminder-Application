@@ -1,0 +1,152 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Task Reminder</title>
+  <meta name="description" content="Tasks with due times and reminders. Works offline; your tasks stay on this device.">
+  <meta name="theme-color" content="#3b6ef5">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-title" content="Reminders">
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="icon" type="image/png" href="icons/favicon.png">
+  <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header class="top">
+    <div class="brand">
+      <span class="logo" aria-hidden="true">⏰</span>
+      <div>
+        <h1>Task Reminder</h1>
+        <p id="summary" class="muted">Loading…</p>
+      </div>
+    </div>
+    <div class="head-tools">
+      <button id="installBtn" class="ghost" hidden>Install app</button>
+      <button id="notifyBtn" class="ghost" hidden>Enable notifications</button>
+    </div>
+  </header>
+
+  <main>
+    <section class="card add">
+      <form id="addForm" autocomplete="off">
+        <div class="row">
+          <input id="title" name="title" placeholder="What do you need to remember?" required maxlength="200">
+          <button type="submit" class="primary">Add task</button>
+        </div>
+        <div class="quick" aria-label="Quick due times">
+          <span class="muted">Due:</span>
+          <button type="button" data-quick="10m">in 10 min</button>
+          <button type="button" data-quick="1h">in 1 hour</button>
+          <button type="button" data-quick="tonight">tonight 8 PM</button>
+          <button type="button" data-quick="tomorrow">tomorrow 9 AM</button>
+          <button type="button" data-quick="clear">no date</button>
+        </div>
+        <div class="grid">
+          <label>Due date &amp; time <input type="datetime-local" name="due"></label>
+          <label>Remind me
+            <select name="remind_before">
+              <option value="0">at due time</option>
+              <option value="5">5 min before</option>
+              <option value="10">10 min before</option>
+              <option value="15">15 min before</option>
+              <option value="30">30 min before</option>
+              <option value="60">1 hour before</option>
+              <option value="1440">1 day before</option>
+            </select>
+          </label>
+          <label>Priority
+            <select name="priority">
+              <option value="normal">Normal</option>
+              <option value="high">High</option>
+              <option value="low">Low</option>
+            </select>
+          </label>
+          <label>Repeat
+            <select name="repeat">
+              <option value="none">Never</option>
+              <option value="daily">Every day</option>
+              <option value="weekdays">Weekdays</option>
+              <option value="weekly">Every week</option>
+              <option value="monthly">Every month</option>
+            </select>
+          </label>
+        </div>
+        <textarea name="notes" rows="2" placeholder="Notes (optional)" maxlength="2000"></textarea>
+        <p id="formError" class="error" role="alert"></p>
+      </form>
+    </section>
+
+    <nav class="filters" aria-label="Filter tasks">
+      <button data-filter="active" class="on">Active</button>
+      <button data-filter="today">Today</button>
+      <button data-filter="overdue">Overdue</button>
+      <button data-filter="upcoming">Upcoming</button>
+      <button data-filter="done">Completed</button>
+      <button data-filter="all">All</button>
+      <input id="search" type="search" placeholder="Search…" aria-label="Search tasks">
+    </nav>
+
+    <section id="list" aria-live="polite"></section>
+
+    <footer class="foot">
+      <p class="muted">Your tasks are saved only on this device, in this browser.
+        Keep the app open (or in recent apps) to get reminders.</p>
+      <div class="tools">
+        <button id="exportBtn" class="ghost">Export backup</button>
+        <button id="importBtn" class="ghost">Import backup</button>
+        <input id="importFile" type="file" accept="application/json,.json" hidden>
+      </div>
+    </footer>
+  </main>
+
+  <!-- in-page reminder pop-up (always works, even without notification permission) -->
+  <div id="alerts" class="alerts" aria-live="assertive"></div>
+
+  <dialog id="editDialog">
+    <form id="editForm" method="dialog">
+      <h2>Edit task</h2>
+      <label>Title <input name="title" required maxlength="200"></label>
+      <div class="grid">
+        <label>Due date &amp; time <input type="datetime-local" name="due"></label>
+        <label>Remind me
+          <select name="remind_before">
+            <option value="0">at due time</option>
+            <option value="5">5 min before</option>
+            <option value="10">10 min before</option>
+            <option value="15">15 min before</option>
+            <option value="30">30 min before</option>
+            <option value="60">1 hour before</option>
+            <option value="1440">1 day before</option>
+          </select>
+        </label>
+        <label>Priority
+          <select name="priority">
+            <option value="normal">Normal</option>
+            <option value="high">High</option>
+            <option value="low">Low</option>
+          </select>
+        </label>
+        <label>Repeat
+          <select name="repeat">
+            <option value="none">Never</option>
+            <option value="daily">Every day</option>
+            <option value="weekdays">Weekdays</option>
+            <option value="weekly">Every week</option>
+            <option value="monthly">Every month</option>
+          </select>
+        </label>
+      </div>
+      <label>Notes <textarea name="notes" rows="3" maxlength="2000"></textarea></label>
+      <p id="editError" class="error" role="alert"></p>
+      <div class="actions">
+        <button value="cancel" formnovalidate class="ghost">Cancel</button>
+        <button value="save" class="primary">Save</button>
+      </div>
+    </form>
+  </dialog>
+
+  <script src="app.js"></script>
+</body>
+</html>

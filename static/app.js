@@ -1,5 +1,5 @@
 "use strict";
-// Task Reminder front end: talks to server.py's JSON API, polls for reminders.
+// Nudge front end: talks to server.py's JSON API, polls for reminders.
 
 const POLL_MS = 10000;
 const $ = (s, el = document) => el.querySelector(s);
@@ -143,7 +143,7 @@ function render() {
   const today = open.filter((t) => t.due && dayDiff(parse(t.due), now) === 0).length;
   $("#summary").textContent =
     `${open.length} open · ${today} due today` + (overdue ? ` · ${overdue} overdue` : "");
-  document.title = overdue ? `(${overdue}) Task Reminder` : "Task Reminder";
+  document.title = overdue ? `(${overdue}) Nudge` : "Nudge";
 }
 
 // ------------------------------------------------------------------ reminders

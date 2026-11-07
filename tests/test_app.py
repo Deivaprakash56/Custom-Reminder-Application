@@ -1,4 +1,4 @@
-"""Tests for the Task Reminder backend:  python3 -m unittest discover -s tests -v"""
+"""Tests for the Nudge backend:  python3 -m unittest discover -s tests -v"""
 import json
 import os
 import sys
@@ -84,7 +84,7 @@ class ApiTests(Base):
 
     def test_static_page(self):
         with urllib.request.urlopen(self.url + "/") as r:
-            self.assertIn(b"Task Reminder", r.read())
+            self.assertIn(b"Nudge", r.read())
 
 
 class ReminderTests(Base):

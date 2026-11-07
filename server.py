@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Task Reminder - a small local web app (Python standard library only).
+"""Nudge - a small local web app (Python standard library only).
 
     python3 server.py                 # http://127.0.0.1:8765
     python3 server.py --port 9000
@@ -263,7 +263,7 @@ class Scheduler(threading.Thread):
             return
         body = f"Due {due}" + (f"\n{t['notes']}" if t["notes"] else "")
         urgency = {"high": "critical", "low": "low"}.get(t["priority"], "normal")
-        subprocess.Popen(["notify-send", "-a", "Task Reminder", "-u", urgency, "-i",
+        subprocess.Popen(["notify-send", "-a", "Nudge", "-u", urgency, "-i",
                           "appointment-soon", f"⏰ {t['title']}", body],
                          stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         if self.sound:
@@ -371,7 +371,7 @@ def make_server(host, port, db_path, desktop=True, scheduler=True):
 
 
 def main():
-    ap = argparse.ArgumentParser(description="Task Reminder web app")
+    ap = argparse.ArgumentParser(description="Nudge web app")
     ap.add_argument("--port", type=int, default=8765)
     ap.add_argument("--lan", action="store_true",
                     help="listen on all interfaces (no login - only use on a trusted network)")
@@ -380,7 +380,7 @@ def main():
     args = ap.parse_args()
     host = "0.0.0.0" if args.lan else "127.0.0.1"
     httpd, _ = make_server(host, args.port, args.db, desktop=not args.no_desktop)
-    print(f"Task Reminder running at http://127.0.0.1:{args.port}"
+    print(f"Nudge running at http://127.0.0.1:{args.port}"
           + ("  (also on your LAN IP - no password, trusted networks only)" if args.lan else ""),
           flush=True)
     try:

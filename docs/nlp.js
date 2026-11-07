@@ -1,5 +1,5 @@
 "use strict";
-// Natural-language command parser for Reminders (voice + typed commands).
+// Natural-language command parser for Nudge (voice + typed commands).
 // Pure functions, no DOM: runs in the browser (window.NLP) and in Node (module.exports) for tests.
 //
 //   NLP.parse("remind me to call mom tomorrow at 5 pm", new Date())
@@ -130,7 +130,7 @@
     let prev;
     do {
       prev = s;
-      s = s.replace(/^\s*(?:hey|hi|ok|okay|hello)\s+(?:siri|reminders?|assistant|app)\b[,.!]?\s*/i, " ")
+      s = s.replace(/^\s*(?:hey|hi|ok|okay|hello)\s+(?:siri|nudge|reminders?|assistant|app)\b[,.!]?\s*/i, " ")
         .replace(/^\s*(?:please|kindly|so|um+|uh+|hmm+|okay|ok|alright|hey)\b[,.]?\s+/i, " ")
         .replace(/^\s*(?:can|could|would|will)\s+you(?:\s+please)?\s+/i, " ")
         .replace(/^\s*(?:i\s+(?:need|want)\s+you\s+to|i'?d\s+like\s+you\s+to|i\s+want\s+to|i\s+need\s+to\s+be\s+reminded\s+to)\s+/i, " ")

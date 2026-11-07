@@ -1,5 +1,5 @@
 "use strict";
-// Reminders - installable web app (GitHub Pages). Everything is stored on this device (localStorage).
+// Nudge - installable web app (GitHub Pages). Everything is stored on this device (localStorage).
 // Private-folder items are encrypted with AES-GCM using a key derived from your password (PBKDF2).
 // Voice commands use the browser's speech recognition; NLP (nlp.js) turns them into actions.
 
@@ -670,7 +670,7 @@ function render() {
   $("#viewTitle").textContent = meta.title;
   const vi = $("#viewIcon"); vi.style.setProperty("--c", meta.color); vi.replaceChildren(icon(meta.icon, 20));
   const c = counts(now);
-  document.title = c.overdue ? `(${c.overdue}) Reminders` : "Reminders";
+  document.title = c.overdue ? `(${c.overdue}) Nudge` : "Nudge";
   $("#newBtn").lastElementChild.textContent = { todo: "New to-do", board: "New card", notes: "New note" }[state.view] || "New reminder";
   renderView(now);
 }
@@ -1345,7 +1345,7 @@ function openSettings() {
     h("h3", {}, "Voice assistant"),
     select("voiceLang", "Language / accent", [["en-IN", "English (India)"], ["en-US", "English (US)"], ["en-GB", "English (UK)"], ["en-AU", "English (Australia)"], ["en-CA", "English (Canada)"], ["ta-IN", "தமிழ் (Tamil)"]]),
     toggle("speak", "Spoken replies", "The assistant answers out loud.", syncSpeakBtn),
-    toggle("handsFree", "Hands-free “Hey Reminders”", "Listens for the wake phrase while the app is open (Chrome/Edge).", () => { if (s.handsFree) startWake(); else stopWake(); }),
+    toggle("handsFree", "Hands-free “Hey Nudge”", "Listens for the wake phrase while the app is open (Chrome/Edge).", () => { if (s.handsFree) startWake(); else stopWake(); }),
     !SR ? h("p", { class: "warn" }, "This browser has no speech recognition. Use Chrome, Edge or Safari for voice; typing commands works everywhere.") : null,
     h("h3", {}, "Private folder"),
     h("div", { class: "set-row" }, h("div", {}, h("div", { class: "set-label" }, db.vault ? (unlocked() ? "Unlocked" : "Locked") : "No password set"),
@@ -1928,7 +1928,7 @@ function startWake() {
     for (let i = e.resultIndex; i < e.results.length; i++) {
       if (!e.results[i].isFinal) continue;
       const t = e.results[i][0].transcript.trim();
-      const m = t.match(/\b(?:hey|hi|ok|okay)\s+(?:reminders?|assistant|siri)\b[,.!]?\s*(.*)$/i);
+      const m = t.match(/\b(?:hey|hi|ok|okay)\s+(?:nudge|reminders?|assistant|siri)\b[,.!]?\s*(.*)$/i);
       if (m) {
         stopWake();
         openAssistant(!m[1]);

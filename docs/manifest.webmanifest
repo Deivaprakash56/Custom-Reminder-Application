@@ -1,7 +1,7 @@
 {
-  "name": "Reminders",
-  "short_name": "Reminders",
-  "description": "Reminders, to-dos, a task board and notes with a voice assistant. Works offline; your data stays on this device.",
+  "name": "Nudge",
+  "short_name": "Nudge",
+  "description": "Nudge: reminders, to-dos, a task board and notes with a voice assistant. Works offline; your data stays on this device.",
   "start_url": "./",
   "scope": "./",
   "display": "standalone",

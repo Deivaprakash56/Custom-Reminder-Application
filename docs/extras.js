@@ -155,7 +155,7 @@ function reminderText(r) { const subs = rSubs(r); return [rNotes(r), ...subs.map
 function toICS(list) {
   const now = new Date();
   const stamp = `${now.getUTCFullYear()}${pad(now.getUTCMonth() + 1)}${pad(now.getUTCDate())}T${pad(now.getUTCHours())}${pad(now.getUTCMinutes())}00Z`;
-  const L = ["BEGIN:VCALENDAR", "VERSION:2.0", "PRODID:-//Reminders//Custom Reminder Application//EN", "CALSCALE:GREGORIAN", "METHOD:PUBLISH"];
+  const L = ["BEGIN:VCALENDAR", "VERSION:2.0", "PRODID:-//Nudge//Custom Reminder Application//EN", "CALSCALE:GREGORIAN", "METHOD:PUBLISH"];
   for (const r of list) {
     if (!r.due || !canSee(r)) continue;
     const d = parse(r.due);
@@ -909,7 +909,7 @@ async function bioEnable() {
   if (!unlocked() || !vault.raw) throw new Error("Unlock the Private folder first");
   const salt = rand(32);
   const cred = await navigator.credentials.create({ publicKey: {
-    rp: { name: "Reminders" }, user: { id: rand(16), name: "private-folder", displayName: "Reminders · Private folder" }, challenge: rand(32),
+    rp: { name: "Nudge" }, user: { id: rand(16), name: "private-folder", displayName: "Nudge · Private folder" }, challenge: rand(32),
     pubKeyCredParams: [{ type: "public-key", alg: -7 }, { type: "public-key", alg: -257 }],
     authenticatorSelection: { authenticatorAttachment: "platform", userVerification: "required", residentKey: "preferred" }, timeout: 60000,
     extensions: { prf: { eval: { first: salt } } } } });

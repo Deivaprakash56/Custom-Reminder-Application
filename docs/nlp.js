@@ -61,8 +61,60 @@
     return parseFloat(q);
   }
 
+  // ---------------------------------------------------------------- Tamil -> English keywords
+  // Time words, numbers and command verbs are translated; the rest (the subject) stays in Tamil.
+  const TA = "[\\u0B80-\\u0BFF]";
+  const hasTamil = (s) => /[஀-௿]/.test(s);
+  const TA_NUM = [["பதினைந்து", 15], ["நாற்பத்தைந்து", 45], ["பன்னிரண்டு", 12], ["பன்னெண்டு", 12], ["பதினொன்று", 11], ["பதினொரு", 11],
+    ["இருபது", 20], ["முப்பது", 30], ["நாற்பது", 40], ["ஒன்பது", 9], ["இரண்டு", 2], ["ரெண்டு", 2], ["மூன்று", 3], ["மூணு", 3],
+    ["நான்கு", 4], ["நாலு", 4], ["ஐந்து", 5], ["அஞ்சு", 5], ["ஆறு", 6], ["ஏழு", 7], ["எட்டு", 8], ["பத்து", 10], ["ஒன்று", 1], ["ஒண்ணு", 1]];
+  const TA_DAYS = [["திங்கள்", "monday"], ["செவ்வாய்", "tuesday"], ["புதன்", "wednesday"], ["வியாழன்", "thursday"], ["வெள்ளி", "friday"], ["சனி", "saturday"], ["ஞாயிறு", "sunday"]];
+  function fromTamil(input) {
+    let s = ` ${input} `;
+    let mode = null;
+    const sub = (re, rep) => { s = s.replace(re, rep); };
+    for (const [w, n] of TA_NUM) sub(new RegExp(`${w}(?=\\s|${TA}|$)`, "g"), ` ${n} `);
+    sub(/நேரம்\s*என்ன|மணி\s*என்ன|என்ன\s*நேரம்/g, " what time is it ");
+    sub(/நாளை(?:க்கு)?\s*என்ன\s*(?:இருக்கு|இருக்கிறது|வேலை)/g, " what are my reminders tomorrow ");
+    sub(/இன்(?:று|னைக்கு|றைக்கு)\s*என்ன\s*(?:இருக்கு|இருக்கிறது|வேலை)|இன்றைய\s*நினைவூட்டல்கள்/g, " what are my reminders today ");
+    sub(/அரை\s*மணி\s*நேரத்(?:தில்|துல|திற்குப்\s*பிறகு)/g, " in 30 minutes ");
+    sub(/(\d+)\s*மணி\s*நேரத்(?:தில்|துல|திற்குப்\s*பிறகு)/g, " in $1 hours ");
+    sub(/(\d+)\s*நிமிட(?:த்தில்|ங்களில்|த்துல|ம்\s*கழித்து|ம்\s*கழிச்சு|த்திற்குப்\s*பிறகு)/g, " in $1 minutes ");
+    sub(/(\d+)\s*நா(?:ட்களில்|ளில்|ள்\s*கழித்து)/g, " in $1 days ");
+    sub(/(\d+)\s*மணி\s*(\d+)\s*நிமிட(?:த்துக்கு|த்திற்கு|ம்)?/g, " at $1:$2 ");
+    sub(/(\d+)\s*மணி(?:க்கு|யளவில்|அளவில்|க்குள்)?/g, " at $1 ");
+    sub(/நாளை\s*மறுநாள்/g, " day after tomorrow ");
+    sub(/நாளை(?:க்கு|ய)?/g, " tomorrow ");
+    sub(/இன்றிரவு|இன்(?:று|னைக்கு)\s*(?:இரவு|ராத்திரி)/g, " tonight ");
+    sub(/இன்(?:று|னைக்கு|றைக்கு)/g, " today ");
+    sub(/அடுத்த\s*வார(?:ம்|த்தில்)/g, " next week ");
+    sub(/காலை(?:யில்|ல)?/g, " morning ");
+    sub(/மதிய(?:ம்|த்தில்)|பிற்பகல்/g, " afternoon ");
+    sub(/மாலை(?:யில்)?|சாயங்காலம்|சாயந்திரம்/g, " evening ");
+    sub(/இரவி(?:ல்)?|இரவு|ராத்திரி(?:யில்)?/g, " night ");
+    for (const [w, e] of TA_DAYS) sub(new RegExp(`${w}(?:க்கிழமை|கிழமை)?(?:\\s*அன்று)?`, "g"), ` ${e} `);
+    sub(/தினமும்|தினசரி|ஒவ்வொரு\s*நாளும்/g, " every day ");
+    sub(/ஒவ்வொரு\s*வாரமும்/g, " every week ");
+    sub(/ஒவ்வொரு\s*மாதமும்/g, " every month ");
+    sub(/ஒவ்வொரு/g, " every ");
+    sub(/அவசரமாக|அவசரம்|மிக\s*முக்கியம்/g, " urgent ");
+    s = s.replace(/(?:என(?:க்கு|்னை)\s*)?(?:நினைவூட்டு(?:ங்கள்|ங்க|ம்|க)?|நினைவுபடுத்து(?:ங்கள்|ங்க)?|ஞாபகப்படுத்து(?:ங்கள்|ங்க)?|ஞாபகம்\s*(?:செய்|படுத்து)(?:ங்க)?)/g, () => { mode = mode || "remind"; return " "; });
+    s = s.replace(/குறிப்பு\s*(?:எடு(?:த்துக்கொள்|ங்கள்|ங்க)?|சேர்|எழுது)?/g, () => { mode = mode || "note"; return " "; });
+    s = s.replace(/(?:செய்ய\s*வேண்டியவை\s*)?(?:பட்டியலில்|லிஸ்டில்|லிஸ்ட்ல)\s*(?:சேர்(?:க்கவும்)?|போடு)/g, () => { mode = mode || "todo"; return " "; });
+    s = s.replace(/(?:செய்து\s*)?(?:முடித்தேன்|முடிந்தது|முடிச்சேன்)/g, () => { mode = mode || "done"; return " "; });
+    s = s.replace(/(?:ரத்து\s*செய்|நீக்கு|அழி)(?:ங்கள்|ங்க)?/g, () => { mode = mode || "delete"; return " "; });
+    s = s.replace(/(?:^|\s)(?:எனக்கு|என்னை|தயவுசெய்து|ப்ளீஸ்|அதை|இதை|அன்று)(?=\s|$)/g, " ").replace(/\s+/g, " ").trim();
+    if (mode === "remind") return `remind me to ${s}`;
+    if (mode === "note") return `take a note ${s}`;
+    if (mode === "todo") return `add ${s} to my todo list`;
+    if (mode === "done") return `mark ${s} as done`;
+    if (mode === "delete") return `delete ${s}`;
+    return s;
+  }
+
   function normalize(text) {
     let s = ` ${String(text || "")} `;
+    if (hasTamil(s)) s = ` ${fromTamil(s)} `;
     s = s.replace(/[‘’]/g, "'").replace(/[“”]/g, '"');
     s = s.replace(/\b([ap])\.\s?m\.?/gi, (m, x) => `${x.toLowerCase()}m`);
     s = s.replace(/(\d)\s*([ap])\s?m\b/gi, (m, d, x) => `${d} ${x.toLowerCase()}m`);
@@ -107,7 +159,7 @@
   // folders: [{id, name}] - recognised as "#work", "in my work folder", "to the work list", "work reminder"
   function extractDetails(input, now, opts = {}) {
     let s = ` ${input} `;
-    const out = { repeat: "none", priority: null, folder: null, remind_before: null, repeatDay: null };
+    const out = { repeat: "none", priority: null, folder: null, remind_before: null, repeatDay: null, nag: false, geo: null };
     const take = (re, fn) => {
       const m = s.match(re);
       if (!m) return false;
@@ -115,6 +167,18 @@
       s = s.slice(0, m.index) + " " + s.slice(m.index + m[0].length);
       return true;
     };
+
+    // ---- nagging ("keep reminding me until I do it")
+    take(/\b(?:and\s+)?(?:keep\s+(?:on\s+)?reminding\s+me(?:\s+until\s+i\s+(?:do\s+it|finish(?:\s+it)?|mark\s+it\s+(?:as\s+)?done))?|nag\s+me(?:\s+about\s+it)?|until\s+i\s+(?:do\s+it|mark\s+it\s+(?:as\s+)?done|finish\s+it)|don'?t\s+let\s+me\s+ignore\s+(?:it|this)|persistently)\b/i, () => { out.nag = true; });
+
+    // ---- location ("when I get home", "when I leave work")
+    const places = (opts.places || []).filter((x) => x && x.name).map((x) => x.name.toLowerCase().replace(/[.*+?^${}()|[\]\\]/g, "\\$&"));
+    const P = `(home|work|office|the\\s+office|${places.length ? places.join("|") : "zzzz"})`;
+    const placeName = (n) => { n = n.toLowerCase().replace(/^the\s+/, ""); return n === "office" ? "work" : n; };
+    take(new RegExp(`\\b(?:when(?:ever)?|as\\s+soon\\s+as|once)\\s+i\\s+(?:get|arrive|reach|come|am|'m|go)\\s+(?:back\\s+)?(?:to\\s+|at\\s+|in\\s+)?(?:my\\s+|the\\s+)?${P}\\b`, "i"),
+      (m, n) => { out.geo = { place: placeName(n), when: "arrive" }; }) ||
+    take(new RegExp(`\\b(?:when(?:ever)?|as\\s+soon\\s+as|once)\\s+i\\s+(?:leave|exit|head\\s+out\\s+of|go\\s+out\\s+of|am\\s+leaving|'m\\s+leaving|get\\s+out\\s+of)\\s+(?:my\\s+|the\\s+)?${P}\\b`, "i"),
+      (m, n) => { out.geo = { place: placeName(n), when: "leave" }; });
 
     // ---- folder
     const folders = (opts.folders || []).filter((f) => f && f.name);
@@ -283,6 +347,7 @@
     }
 
     // ---- resolve to a datetime
+    const dateGiven = Boolean(date || exact);
     let due = null; let hasTime = false;
     if (exact) {
       due = exact; hasTime = true;
@@ -332,7 +397,7 @@
     if (out.repeat === "weekly" && out.repeatDay != null && due && due.getDay() !== out.repeatDay) {
       due = addDays(due, (out.repeatDay - due.getDay() + 7) % 7);
     }
-    return { rest: s, due: due ? fmt(due) : null, hasTime, hasDate: Boolean(due), ...out };
+    return { rest: s, due: due ? fmt(due) : null, hasTime, hasDate: Boolean(due), dateGiven, time, ...out };
   }
 
   // ---------------------------------------------------------------- intents
@@ -343,10 +408,14 @@
     [/^(?:my\s+)?(?:history|completed|done|activity|log)$/, "history"],
     [/^(?:my\s+)?(?:overdue|late|missed)(?:\s+reminders|\s+tasks)?$/, "overdue"],
     [/^(?:my\s+)?(?:today|today's(?:\s+reminders)?|today\s+reminders)$/, "today"],
-    [/^(?:my\s+)?(?:scheduled|upcoming|calendar|schedule|agenda)$/, "scheduled"],
+    [/^(?:my\s+)?(?:scheduled|upcoming|schedule|agenda)$/, "scheduled"],
     [/^(?:my\s+)?(?:all\s+)?(?:reminders|all)$/, "all"],
     [/^(?:my\s+)?(?:flagged|important|priority|high\s+priority)$/, "flagged"],
     [/^(?:the\s+)?settings|preferences$/, "settings"],
+    [/^(?:my\s+)?(?:calendar|month(?:\s+view)?|week(?:\s+view)?|planner)$/, "calendar"],
+    [/^(?:my\s+)?(?:habits?|streaks?|habit\s+tracker)$/, "habits"],
+    [/^(?:the\s+)?(?:focus(?:\s+timer)?|pomodoro|timer)$/, "focus"],
+    [/^(?:my\s+)?(?:insights|stats|statistics|summary|weekly\s+summary|report)$/, "insights"],
   ];
 
   function rangeOf(s) {
@@ -376,6 +445,51 @@
     if (/^(?:lock|lock\s+(?:my\s+)?(?:the\s+)?private(?:\s+folder)?|lock\s+(?:the\s+)?vault)\W*$/.test(low)) return { ...base, intent: "lock" };
     if (/^(?:clear|delete|remove)\s+(?:all\s+)?(?:the\s+)?completed(?:\s+(?:todos?|tasks?|items?|reminders?))?\W*$/.test(low)) return { ...base, intent: "clearCompleted" };
 
+    // ---- briefing, summary, focus, habits
+    if (/^(?:brief\s+me|(?:give\s+me\s+|read\s+(?:me\s+)?)?(?:my\s+|the\s+)?(?:morning\s+|daily\s+)?briefing|what'?s\s+my\s+day(?:\s+(?:like|look\s+like))?|plan\s+my\s+day|how\s+does\s+my\s+day\s+look)\W*$/.test(low)) return { ...base, intent: "briefing" };
+    if (/^(?:(?:my\s+)?weekly\s+summary|how\s+was\s+my\s+week|how\s+did\s+i\s+do(?:\s+this\s+week)?|(?:show|give)\s+(?:me\s+)?(?:my\s+)?(?:insights|stats|statistics|summary|weekly\s+report))\W*$/.test(low)) return { ...base, intent: "summary" };
+    let fm = s.match(/^(?:start|begin|run|set)\s+(?:a\s+|an\s+|the\s+)?(?:(\d+)[\s-]*(?:minutes?|mins?)\s+)?(?:focus|pomodoro|focus\s+session|focus\s+timer|deep\s+work)(?:\s+(?:session|timer))?(?:\s+for\s+(\d+)\s*(?:minutes?|mins?))?(?:\s+(?:on|for|with)\s+(.+?))?\W*$/i);
+    if (fm) return { ...base, intent: "focusStart", minutes: Number(fm[1] || fm[2]) || null, title: fm[3] ? tidyTitle(fm[3]) : null };
+    if (/^(?:stop|end|cancel|finish|pause)\s+(?:the\s+|my\s+)?(?:focus|pomodoro|timer|focus\s+session)(?:\s+(?:session|timer))?\W*$/.test(low)) return { ...base, intent: "focusStop" };
+    fm = s.match(/^(?:add|create|start|new|track|begin)\s+(?:a\s+)?(?:new\s+)?habit\s+(?:to\s+|of\s+|called\s+|named\s+|:\s*)?(.+?)\W*$/i);
+    if (fm) { const d = extractDetails(fm[1], now, opts); return { ...base, intent: "habitAdd", title: tidyTitle(d.rest), repeat: d.repeat, repeatDay: d.repeatDay }; }
+    fm = s.match(/^(?:check\s+in|log|i\s+did\s+(?:my\s+)?)\s*(?:my\s+)?(?:habit\s+)?(.+?)(?:\s+habit)?(?:\s+(?:for\s+)?today)?\W*$/i);
+    if (fm) return { ...base, intent: "habitCheck", query: tidyTitle(fm[1]) };
+
+    // ---- conversation memory: change the last item ("move it to 6", "make it weekly")
+    const IT = "(?:it|that|this|the\\s+last\\s+one|the\\s+reminder|that\\s+reminder|this\\s+reminder)";
+    const mod = (changesText, extra = {}) => {
+      const d = extractDetails(changesText || "", now, opts);
+      const changes = {};
+      if (d.due && (d.dateGiven || d.hasTime)) changes.due = d.due;
+      if (d.repeat !== "none") changes.repeat = d.repeat;
+      if (d.priority) changes.priority = d.priority;
+      if (d.folder) changes.folder = d.folder;
+      if (d.remind_before != null) changes.remind_before = d.remind_before;
+      if (d.nag) changes.nag = true;
+      if (d.geo) changes.geo = d.geo;
+      return { ...base, intent: "modify", changes, timeOnly: Boolean(d.due && d.time && !d.dateGiven), time: d.time, ...extra };
+    };
+    const atIfBare = (t) => (/^\d{1,2}(?::\d{2})?(?:\s*(?:am|pm))?$/i.test(t.trim()) ? `at ${t}` : t);
+    let mm;
+    if (s.match(new RegExp(`^(?:mark|tick)\\s+${IT}\\s+(?:as\\s+)?(?:done|complete(?:d)?|finished)\\W*$`, "i"))) return { ...base, intent: "modify", changes: {}, done: true };
+    if (s.match(new RegExp(`^(?:delete|remove|drop)\\s+${IT}\\W*$`, "i"))) return { ...base, intent: "modify", changes: {}, del: true };
+    if (s.match(new RegExp(`^(?:add|put|export|save)\\s+${IT}\\s+(?:to|in|on|into)\\s+(?:my\\s+)?(?:google\\s+)?calendar\\W*$`, "i"))) return { ...base, intent: "modify", changes: {}, calendar: true };
+    if ((mm = s.match(new RegExp(`^(?:rename|retitle|call)\\s+${IT}\\s+(?:to\\s+|as\\s+)?(.+?)\\W*$`, "i")))) return { ...base, intent: "modify", changes: {}, rename: tidyTitle(mm[1]) };
+    if ((mm = s.match(new RegExp(`^(?:add|attach|append)\\s+(?:a\\s+)?(?:note|notes|details?|description)\\s+(?:to\\s+${IT}\\s*)?(?:saying|that|:|-)?\\s*(.+)$`, "i")))) return { ...base, intent: "modify", changes: {}, notesAppend: mm[1].trim() };
+    if ((mm = s.match(new RegExp(`^(?:put|move|file)\\s+${IT}\\s+(?:in|into|to|under)\\s+(?:my\\s+|the\\s+)?(.+?)(?:\\s+(?:folder|list))?\\W*$`, "i")))) {
+      const r = mod(`in ${mm[1]} folder`);
+      if (r.changes.folder) return r;
+    }
+    if ((mm = s.match(new RegExp(`^(?:no,?\\s+|actually,?\\s+|wait,?\\s+|sorry,?\\s+)?(?:move|change|reschedule|push|shift|postpone|set|make)\\s+${IT}(?:\\s+(?:to|for|until|till|back\\s+to|forward\\s+to|on|at))?\\s+(.+?)(?:\\s+instead)?\\W*$`, "i")))) {
+      const r = mod(atIfBare(mm[1]));
+      if (Object.keys(r.changes).length) return r;
+    }
+    if ((mm = s.match(/^(?:no,?\s+|actually,?\s+|wait,?\s+|sorry,?\s+)(.+?)(?:\s+instead)?\W*$/i)) || (mm = s.match(/^(.+?)\s+instead\W*$/i))) {
+      const r = mod(atIfBare(mm[1]));
+      if (Object.keys(r.changes).length) return r;
+    }
+
     // ---- queries about the schedule
     if (/^(?:what(?:'s|\s+is|\s+are|\s+do\s+i\s+have)?|show(?:\s+me)?|list|read(?:\s+out)?|tell\s+me|any|do\s+i\s+have|how\s+many|check|give\s+me)\b.*\b(?:reminders?|schedule|agenda|tasks?|plans?|planned|due|overdue|anything|events?|on\s+(?:for|today|tomorrow))\b/.test(low) &&
         !/^(?:remind|set|add|create)\b/.test(low)) {
@@ -388,6 +502,9 @@
       const n = m[1] ? qty(m[1]) : 10;
       return { ...base, intent: "snooze", minutes: Math.round(m[2] && /^h/.test(m[2]) ? n * 60 : n) };
     }
+
+    m = low.match(/^snooze\s+(?:it\s+|that\s+|this\s+)?(?:until|till|to|for)\s+(.+?)\W*$/);
+    if (m) { const d = extractDetails(m[1], now, opts); if (d.due) return { ...base, intent: "snoozeUntil", due: d.due }; }
 
     // ---- navigation
     m = low.match(/^(?:open|show|go\s+to|switch\s+to|view|take\s+me\s+to|display|launch|bring\s+up)\s+(?:me\s+)?(?:my\s+|the\s+)?(.+?)(?:\s+(?:folder|list|page|section|view|tab|screen))?\W*$/);
@@ -468,6 +585,7 @@
     return {
       ...base, intent: "reminder", explicit, title, due: d.due, hasTime: d.hasTime, hasDate: d.hasDate,
       remind_before: d.remind_before, priority: d.priority, repeat: d.repeat, folder: d.folder || folderHint,
+      nag: d.nag, geo: d.geo,
     };
   }
 
@@ -476,7 +594,7 @@
     const s = normalize(text);
     if (/^\s*(?:no|none|nope|no\s+time|without\s+(?:a\s+)?(?:time|date)|never|skip|anytime|any\s+time|doesn'?t\s+matter)\b/i.test(s)) return { none: true };
     const d = extractDetails(s, now, opts);
-    return { due: d.due, hasTime: d.hasTime, repeat: d.repeat };
+    return { due: d.due, hasTime: d.hasTime, repeat: d.repeat, dateGiven: d.dateGiven, time: d.time };
   }
 
   // ---------------------------------------------------------------- speech helpers
@@ -499,5 +617,5 @@
     return String(s).replace(/\b(i'm|i've|i'll|my|me|i|mine|myself|our|we|us)\b/gi, (w) => map[w.toLowerCase()] || w);
   }
 
-  return { parse, parseWhen, whenPhrase, toSecondPerson, normalize, fmt };
+  return { parse, parseWhen, whenPhrase, toSecondPerson, normalize, fmt, fromTamil, hasTamil };
 });

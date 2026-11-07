@@ -1,60 +1,120 @@
-# Task Reminder
+# Reminders — Custom Reminder Application
 
-Tasks with due times and reminders, in two editions:
+A reminder app with a Siri-style voice assistant, to-dos, a task board, notes, habits, a focus timer,
+a calendar and a password-protected private folder. Open it on any phone or PC:
 
-| Edition | Where | Tasks stored | Reminders |
+**▶ https://deivaprakash56.github.io/Custom-Reminder-Application/**
+
+<!-- VIDEO -->
+
+| Edition | Where | Data stored | Reminders |
 |---|---|---|---|
-| **Phone app** (`docs/`) | GitHub Pages: open the link on any phone or PC and "Install" | on that device (browser storage) | while the app is open or recently used |
+| **Phone app** (`docs/`) | GitHub Pages: open the link and "Install" | on that device (optional encrypted sync) | while the app is open, or always with the push server |
+| **Push server** (`push-worker/`) | free Cloudflare Worker you deploy | push schedule + encrypted sync blob | push notifications even when the app is closed |
 | **PC server** (`server.py`, `static/`) | your Ubuntu PC, `./run.sh` | `data/tasks.db` on the PC | desktop pop-up and sound, even with no browser open |
-
-Both use the same interface and need nothing installed (plain JavaScript; the PC edition uses only the
-Python standard library and SQLite).
 
 ## Phone app (GitHub Pages)
 
 `docs/` is a static, installable web app (PWA) with an offline cache and a home-screen icon.
-GitHub Pages serves it at `https://deivaprakash56.github.io/Custom-Reminder-Application/`
-(Settings → Pages → Branch `main`, folder `/docs`). If Pages is set to the root folder instead,
-the root `index.html` redirects to `docs/`, so the link still opens the app.
+GitHub Pages serves it from branch `main`, folder `/docs` (the root `index.html` redirects there too).
+Open the link, tap **Install app** (or **Add to Home screen**), then **Enable notifications**.
 
-### What's inside
+### Organise
 
-- **Sidebar** with a live 12-hour clock (and a countdown to your next reminder), search across
+- **Sidebar** with a live 12-hour clock and a countdown to your next reminder, search across
   everything, and smart lists: **Today, Scheduled, All, Overdue, Flagged, History**.
-- **Folders:** Personal, Work, **Private** (password-protected) and your own folders (pick a colour;
-  edit or delete from the ⋯ button).
-- **Private folder:** private reminders and notes are encrypted with AES-256-GCM using a key derived
-  from your password (PBKDF2-SHA-256, 310,000 rounds). It locks after 5 minutes. Private reminders
-  still go off while locked, shown as "Private reminder". There is no password recovery: "Forgot
-  password?" wipes the private items.
-- **Workspace:** a **To-Do List** (drag to reorder, double-click to edit, progress bar), **Things to
-  Do** (a To Do / In Progress / Done board with drag and drop), and a **Notepad** (autosave, pin,
-  search, word count).
-- **Voice assistant** (mic button or Ctrl+K): talk or type in plain English. Examples:
-  - "Remind me to call mom tomorrow at 5 pm", "in 20 minutes remind me to check the oven"
-  - "Remind me to take out the trash every weekday at 7:30 am", "… every Monday at 7"
-  - "Remind me to pay rent on the 1st at 10 #work", "set a work reminder to email John at 4"
-  - "… it's urgent", "… and remind me 30 minutes before"
-  - "Add eggs to my shopping list", "Add redesign the logo to things to do"
-  - "Take a note that the wifi password is …"
-  - "What's on tomorrow?", "What's overdue?", "What time is it?"
-  - "Mark call mom as done", "Delete the reminder about the dentist", "Snooze for 15 minutes", "Undo"
-  - "Open my work folder", "Open notepad", "Lock private folder"
+- **Folders:** Personal, Work, **Private** and your own folders (pick a colour; edit from the ⋯ button).
+- **Reminders** with date, time, repeat (daily, weekdays, weekly, monthly, yearly), early alerts,
+  priority, notes, a **checklist of steps**, **photo/file attachments**, and **location triggers**
+  ("when I leave work").
+- **Calendar:** month and week views; drag a reminder to another day; double-click a day to add one;
+  repeating reminders appear on every day they happen.
+- **Workspace:** a **To-Do List** (drag to reorder, progress bar), **Things to Do** (To Do / In Progress /
+  Done board with drag and drop), and a **Notepad** (autosave, pin, search; select text and tap the bell
+  to turn it into a reminder).
+- **Habits:** pick the days, check in daily, keep a 🔥 streak; the week's dots show what you kept.
+- **Focus timer (Pomodoro):** 25/5, 50/10 or your own lengths, linked to a Things to Do card or to-do;
+  a floating mini-timer follows you around the app; minutes are logged per task.
+- **Insights:** a weekly summary — completed vs the week before, overdue, focus time, habits kept,
+  busiest day, and completions per day — which it can read aloud.
+- **History:** everything you completed, plus an activity log; **Undo** for every change.
 
-  If you leave out the time, it asks "When should I remind you?" and keeps listening. It answers out
-  loud (turn this off in Settings), and you can turn on hands-free "Hey Reminders" in Settings.
-  Voice input needs Chrome, Edge or Safari; typed commands work in every browser.
-- The add bar on every list understands the same language and shows a live preview of what it
-  understood.
-- Reminders show an in-page alert with Done / Snooze, play a chime, can read the reminder aloud, and
-  send a system notification if you allow it.
-- Undo for every change, an activity log, light and dark themes, a phone layout, and export/import
-  backups (Settings → Backup).
+### Never miss it
 
-Tasks from the first version of the app are moved into the Personal folder automatically.
-Data stays on that device. Reminders fire while the app is open or recently used; a static site has
-no server, so it can't wake a closed app. If you need alerts with the app fully closed, use the PC
-edition.
+- Alerts with **Done / 10 min / Later…**; "Later" offers **smart snooze**: after lunch, this evening,
+  tonight, tomorrow morning, next Monday.
+- **Nagging mode:** "keep reminding me until I do it" repeats every 5 minutes until you tick it off.
+- **Alarm sounds:** chime, bell, marimba, digital, gentle rise, alarm clock, or **your own sound file**,
+  with volume.
+- **Morning briefing:** at the time you choose, the assistant reads out your day — reminders, overdue
+  items, habits and work in progress (on Mondays, last week's summary too).
+- **Calendar export:** "Add to calendar (.ics)" or "Google Calendar" on any reminder, or export them all,
+  so your phone's own calendar alarms back you up.
+- **Push notifications** with the app closed, using the optional companion server (below).
+
+### Voice assistant (mic button or Ctrl+K)
+
+Talk or type in plain English — or **Tamil** (Settings → Voice → தமிழ்). Examples:
+
+- "Remind me to call mom tomorrow at 5 pm", "in 20 minutes remind me to check the oven"
+- "Remind me to take out the trash every weekday at 7:30 am", "… every Monday at 7", "… on the 1st #work"
+- "… it's urgent", "… and remind me 30 minutes before", "… and keep reminding me until I do it"
+- "Remind me to buy milk when I leave work", "… when I get home" (add places in Settings → Places)
+- **Follow-ups:** "move it to 8", "make it every week", "put it in my work folder", "rename it to …",
+  "actually tomorrow", "6 pm instead", "add it to my calendar", "delete it"
+- "Add eggs to my shopping list", "Add redesign the logo to things to do", "Take a note that …"
+- "What's on tomorrow?", "What's overdue?", "Brief me", "How was my week?"
+- "Start a 25 minute focus on write proposal", "Stop the timer"
+- "Add a habit drink water every day", "Check in drink water"
+- "Mark call mom as done", "Snooze until this evening", "Undo", "Open calendar", "Lock private folder"
+- Tamil: "நாளை மாலை 5 மணிக்கு அம்மாவை அழைக்க நினைவூட்டு", "பால் வாங்க பட்டியலில் சேர்", "நேரம் என்ன"
+
+If you leave out the time it asks "When should I remind you?" and keeps listening. Replies are spoken
+(turn off in Settings); hands-free "Hey Reminders" is in Settings. Speech needs Chrome, Edge or Safari;
+typing works everywhere. Optional **AI fallback**: when the built-in parser doesn't understand a
+sentence, it is sent to Claude (`claude-opus-5-5`) to work out what you meant — add your Anthropic API
+key in Settings → AI assistant, or keep the key on the companion server.
+
+### Private folder
+
+Private reminders, notes, checklists and attachments are encrypted with AES-256-GCM. A random data key
+is wrapped by your password (PBKDF2-SHA-256, 310,000 rounds) and, if you turn it on, by your device's
+**fingerprint / face unlock** (WebAuthn PRF — Chrome on Android, Windows Hello, recent Safari). The
+folder locks after 5 minutes. Private reminders still go off while locked, shown as "Private reminder".
+There is no password recovery: "Forgot password?" wipes the private items.
+
+### More
+
+- **Home-screen shortcuts** (long-press the icon): New reminder, Voice assistant, Today, Calendar.
+- **Share to the app:** share text or a link from another app and save it as a reminder, note or to-do.
+- Light/dark themes, 8 accent colours, phone layout, export/import backups (Settings → Backup).
+- Tasks from the first version of the app are moved into the Personal folder automatically.
+
+## Companion server (optional): push, sync, AI key
+
+A static site can't wake a closed app or share data between devices. `push-worker/` is a small
+Cloudflare Worker (free plan, Durable Objects) that adds:
+
+- **Push notifications** that arrive with the app closed (Web Push, RFC 8291/8292; nagging repeats too).
+- **Sync between devices**, end-to-end encrypted with your sync code — the server stores only
+  ciphertext. Changes are merged item by item. (Attachments and custom sounds stay on each device.)
+- An **AI proxy**, so your Anthropic API key lives on the server instead of in the browser.
+
+Deploy it (needs a free Cloudflare account and Node 18+):
+
+```bash
+cd push-worker
+npx wrangler login
+node gen-vapid.mjs                       # prints the VAPID keys
+npx wrangler secret put VAPID_PUBLIC      # paste the public key
+npx wrangler secret put VAPID_PRIVATE_JWK # paste the JSON private key
+npx wrangler secret put ANTHROPIC_API_KEY # optional, for the AI fallback
+npx wrangler deploy                       # prints https://reminders-push.<you>.workers.dev
+```
+
+Then in the app: **Settings → Companion server**, paste the URL, tap **Check**, and turn on
+**Push notifications** and/or **Sync** (use the same sync code on every device). If you serve the app
+from another origin, add it to `ALLOWED_ORIGINS` in `push-worker/wrangler.toml`.
 
 ## PC server edition
 
@@ -126,21 +186,26 @@ Times are local and look like `2026-11-07T17:30`.
 
 ```bash
 python3 -m unittest discover -s tests -v     # PC server
-node --test tests/test_nlp.js                # voice / natural-language parser (Node 18+)
+node --test tests/test_nlp.js                # voice / natural-language parser, incl. Tamil (Node 18+)
+node --test tests/test_webpush.mjs           # Web Push encryption against the RFC 8291 test vector
+node --test tests/test_worker.mjs            # companion worker: schedule, alarms, nagging, sync
 ```
 
 ## Files
 
 ```
 docs/              phone app for GitHub Pages: index.html, app.js (UI, storage, vault,
-                   reminders, assistant), nlp.js (natural-language parser), style.css,
-                   sw.js (offline + notification buttons), manifest, icons
+                   reminders, assistant), extras.js (calendar, habits, focus, insights,
+                   briefing, location, push, sync, AI, biometrics, sounds, attachments),
+                   nlp.js (English + Tamil parser), style.css, sw.js (offline + push), manifest
+push-worker/       optional Cloudflare Worker: Web Push, encrypted sync, AI proxy
 server.py          HTTP server, JSON API, SQLite store, reminder scheduler
 static/index.html  page
 static/app.js      UI logic, polling, in-page and browser notifications
 static/style.css   styles (light/dark, mobile)
 tests/test_app.py  API and reminder tests (PC server)
 tests/test_nlp.js  natural-language parser tests
+tests/test_webpush.mjs, tests/test_worker.mjs  companion server tests
 run.sh             start and open the browser
 data/tasks.db      your tasks (created on first run)
 ```

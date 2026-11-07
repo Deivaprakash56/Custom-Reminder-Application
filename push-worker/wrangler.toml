@@ -1,0 +1,27 @@
+name = "reminders-push"
+main = "src/index.js"
+compatibility_date = "2025-09-01"
+
+[vars]
+# Pages origin(s) allowed to call this worker (comma separated)
+ALLOWED_ORIGINS = "https://deivaprakash56.github.io,http://localhost:8765,http://127.0.0.1:8765"
+VAPID_SUBJECT = "https://deivaprakash56.github.io/Custom-Reminder-Application/"
+# AI_MODEL = "claude-opus-5-5"
+
+[[durable_objects.bindings]]
+name = "DEVICE"
+class_name = "Device"
+
+[[durable_objects.bindings]]
+name = "SYNC"
+class_name = "SyncRoom"
+
+# SQLite-backed Durable Objects are available on the Workers free plan
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["Device", "SyncRoom"]
+
+# Secrets (set with `npx wrangler secret put NAME`):
+#   VAPID_PUBLIC        base64url public key printed by gen-vapid.mjs
+#   VAPID_PRIVATE_JWK   JSON private key printed by gen-vapid.mjs
+#   ANTHROPIC_API_KEY   optional, enables the AI fallback without storing a key in the browser

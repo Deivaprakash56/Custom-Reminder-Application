@@ -116,3 +116,44 @@ test("spoken phrasing", () => {
   assert.equal(NLP.whenPhrase("2026-11-07T21:10", NOW), "in 10 minutes");
   assert.equal(NLP.toSecondPerson("call my mom and tell me"), "call your mom and tell you");
 });
+
+// --- v3 additions: nagging, location, conversation memory, focus, habits, briefing, Tamil
+const P3 = (s) => NLP.parse(s, NOW, { folders: FOLDERS, places: [{ id: "p1", name: "Gym" }] });
+test("nag + location", () => {
+  assert.equal(P3("remind me to take pills at 9 and keep reminding me until I do it").nag, true);
+  assert.deepEqual(P3("remind me to buy milk when I leave work").geo, { place: "work", when: "leave" });
+  assert.deepEqual(P3("remind me to call mom when I get home").geo, { place: "home", when: "arrive" });
+  const g = P3("remind me when I get to the gym to stretch");
+  assert.equal(g.title, "Stretch"); assert.deepEqual(g.geo, { place: "gym", when: "arrive" });
+});
+test("conversation memory", () => {
+  const a = P3("move it to 6"); assert.equal(a.intent, "modify"); assert.equal(a.timeOnly, true); assert.equal(a.changes.due, "2026-11-08T18:00");
+  assert.deepEqual(P3("make it every week").changes, { repeat: "weekly" });
+  assert.equal(P3("actually tomorrow at 8").changes.due, "2026-11-08T08:00");
+  assert.equal(P3("6 pm instead").timeOnly, true);
+  assert.deepEqual(P3("put it in my work folder").changes, { folder: "work" });
+  assert.equal(P3("rename it to call dad").rename, "Call dad");
+  assert.equal(P3("make it urgent").changes.priority, "high");
+  assert.equal(P3("delete it").del, true);
+  assert.equal(P3("add it to my calendar").calendar, true);
+});
+test("snooze until, focus, habits, briefing, navigation", () => {
+  assert.deepEqual(P3("snooze until tomorrow morning"), { raw: "snooze until tomorrow morning", intent: "snoozeUntil", due: "2026-11-08T09:00" });
+  const f = P3("start a 25 minute focus on write proposal"); assert.equal(f.minutes, 25); assert.equal(f.title, "Write proposal");
+  assert.equal(P3("stop the timer").intent, "focusStop");
+  const h = P3("add a habit drink water every day"); assert.equal(h.intent, "habitAdd"); assert.equal(h.title, "Drink water"); assert.equal(h.repeat, "daily");
+  assert.equal(P3("check in drink water").query, "Drink water");
+  assert.equal(P3("brief me").intent, "briefing");
+  assert.equal(P3("what's my day like").intent, "briefing");
+  assert.equal(P3("how was my week").intent, "summary");
+  for (const [t, v] of [["open calendar", "calendar"], ["show my habits", "habits"], ["open focus timer", "focus"], ["open insights", "insights"]]) assert.equal(P3(t).target, v, t);
+});
+test("Tamil", () => {
+  const a = P3("நாளை மாலை 5 மணிக்கு அம்மாவை அழைக்க நினைவூட்டு");
+  assert.equal(a.intent, "reminder"); assert.equal(a.title, "அம்மாவை அழைக்க"); assert.equal(a.due, "2026-11-08T17:00");
+  assert.equal(P3("10 நிமிடத்தில் மருந்து சாப்பிட நினைவூட்டு").due, "2026-11-07T21:10");
+  const d = P3("தினமும் காலை 7 மணிக்கு நடைப்பயிற்சி நினைவூட்டு"); assert.equal(d.repeat, "daily"); assert.equal(d.due, "2026-11-08T07:00");
+  const t = P3("பால் வாங்க பட்டியலில் சேர்"); assert.equal(t.intent, "todo"); assert.equal(t.title, "பால் வாங்க");
+  assert.equal(P3("நேரம் என்ன").intent, "time");
+  assert.equal(P3("இன்று என்ன இருக்கு").intent, "query");
+});

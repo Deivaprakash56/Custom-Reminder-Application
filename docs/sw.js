@@ -1,6 +1,6 @@
 // Service worker: offline app shell + reminder notification clicks.
-const CACHE = "reminders-v2";
-const SHELL = ["./", "index.html", "app.js", "nlp.js", "style.css", "manifest.webmanifest",
+const CACHE = "reminders-v3";
+const SHELL = ["./", "index.html", "app.js", "nlp.js", "extras.js", "style.css", "manifest.webmanifest",
   "icons/icon-192.png", "icons/icon-512.png", "icons/favicon.png"];
 
 self.addEventListener("install", (e) => {
@@ -27,8 +27,8 @@ self.addEventListener("fetch", (e) => {
 
 // Notification buttons: hand the action to an open app window (or open one).
 self.addEventListener("notificationclick", (e) => {
-  const { id } = e.notification.data || {};
-  const action = e.action || "open";
+  const { id, briefing } = e.notification.data || {};
+  const action = briefing ? "briefing" : e.action || "open";
   e.notification.close();
   e.waitUntil((async () => {
     const wins = await self.clients.matchAll({ type: "window", includeUncontrolled: true });
@@ -36,6 +36,19 @@ self.addEventListener("notificationclick", (e) => {
       wins[0].postMessage({ type: "reminder-action", id, action });
       return wins[0].focus();
     }
-    return self.clients.openWindow(`./?task=${id}&action=${action}`);
+    return self.clients.openWindow(briefing ? "./?action=briefing" : `./?task=${id}&action=${action}`);
   })());
+});
+
+// Push messages from the companion server (reminders that fire while the app is closed).
+self.addEventListener("push", (e) => {
+  let d = {};
+  try { d = e.data ? e.data.json() : {}; } catch { d = { title: "Reminder", body: e.data ? e.data.text() : "" }; }
+  const briefing = d.kind === "briefing";
+  e.waitUntil(self.registration.showNotification(d.title || "⏰ Reminder", {
+    body: d.body || "", tag: d.tag || "reminder", renotify: true, icon: "icons/icon-192.png", badge: "icons/icon-192.png",
+    requireInteraction: Boolean(d.nag || d.priority === "high"), vibrate: [200, 100, 200, 100, 300],
+    data: briefing ? { briefing: true } : { id: d.id },
+    actions: briefing ? [] : [{ action: "done", title: "Done" }, { action: "snooze", title: "Snooze 10 min" }],
+  }));
 });

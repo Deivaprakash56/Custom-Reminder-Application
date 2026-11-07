@@ -155,6 +155,26 @@
         <button type="button" data-q="weekend">Weekend</button>
         <button type="button" data-q="clear">No date</button>
       </div>
+      <div class="form-grid">
+        <label>Location <select name="geo" id="editGeo"></select></label>
+        <label class="check-row"><input type="checkbox" name="nag"><span>Keep reminding me every 5 minutes until it's done</span></label>
+      </div>
+      <div class="editor-block">
+        <div class="block-head">Checklist <span id="subCount" class="muted small"></span></div>
+        <div id="subList" class="sub-list"></div>
+        <input id="subAdd" class="sub-add" placeholder="+ Add a step and press Enter" maxlength="200" aria-label="Add a step">
+      </div>
+      <div class="editor-block">
+        <div class="block-head">Attachments
+          <button type="button" class="btn ghost sm" id="attachBtn"><span data-icon="upload" data-size="14"></span>Add photo or file</button>
+        </div>
+        <div id="attachList" class="attach-list"></div>
+        <input type="file" id="attachInput" multiple hidden>
+      </div>
+      <div class="cal-links">
+        <button type="button" class="btn ghost sm" id="icsBtn"><span data-icon="scheduled" data-size="14"></span>Add to calendar (.ics)</button>
+        <a class="btn ghost sm" id="gcalBtn" target="_blank" rel="noopener" href="#">Google Calendar</a>
+      </div>
       <p id="editError" class="error" role="alert"></p>
       <div class="sheet-actions">
         <button type="button" class="btn danger-ghost" id="editDelete" hidden><span data-icon="trash"></span>Delete</button>
@@ -175,6 +195,7 @@
       <input type="password" name="current" placeholder="Current password" autocomplete="current-password" aria-label="Current password">
       <input type="password" name="pw" placeholder="Password" autocomplete="new-password" aria-label="Password">
       <input type="password" name="pw2" placeholder="Confirm password" autocomplete="new-password" aria-label="Confirm password">
+      <button type="button" class="btn ghost bio-btn" id="vaultBio" hidden><span data-icon="user" data-size="16"></span>Unlock with fingerprint / face</button>
       <p id="vaultError" class="error" role="alert"></p>
       <div class="sheet-actions">
         <button type="button" class="btn danger-ghost" id="vaultReset" hidden>Forgot password?</button>
@@ -214,7 +235,9 @@
   </dialog>
 
   <input id="importFile" type="file" accept="application/json,.json" hidden>
+  <div id="focusWidget" class="focus-widget" hidden></div>
   <script src="nlp.js"></script>
   <script src="app.js"></script>
+  <script src="extras.js"></script>
 </body>
 </html>

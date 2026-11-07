@@ -8,6 +8,11 @@ const OLD_KEY = "task-reminder.v1";
 const CHECK_MS = 15000;
 const $ = (s, el = document) => el.querySelector(s);
 const $$ = (s, el = document) => [...el.querySelectorAll(s)];
+// Extension points used by extras.js (calendar, habits, focus, sync, push, ...)
+const hooks = { afterSave: [], settings: [], tick: [], editorOpen: [], editorSave: [], cardActions: [], rowChips: [], vaultDialog: [] };
+const VIEWS = {};
+const runHooks = (list, ...args) => { for (const f of list) { try { f(...args); } catch (e) { console.warn(e); } } };
+const NAG_MS = 5 * 60000;
 
 // ================================================================== time helpers
 const pad = (n) => String(n).padStart(2, "0");
@@ -151,8 +156,10 @@ function defaultLang() {
 function blankDb() {
   return {
     version: 2, nextId: 1, folders: DEFAULT_FOLDERS.map((f) => ({ ...f })),
-    reminders: [], todos: [], board: [], notes: [], history: [], vault: null,
-    settings: { theme: "system", voiceLang: defaultLang(), speak: true, announce: true, handsFree: false, seconds: true, lastView: "today" },
+    reminders: [], todos: [], board: [], notes: [], history: [], habits: [], places: [], focusLog: [], vault: null,
+    settings: { theme: "system", voiceLang: defaultLang(), speak: true, announce: true, handsFree: false, seconds: true, lastView: "today",
+      accent: "indigo", sound: "chime", volume: 0.8, briefing: false, briefingTime: "08:00", lastBriefing: "", ai: false, aiKey: "",
+      server: "", push: false, pushTitles: true, sync: false, geo: false, focusMin: 25, breakMin: 5 },
   };
 }
 function loadDb() {
@@ -160,7 +167,7 @@ function loadDb() {
     const d = JSON.parse(localStorage.getItem(KEY));
     if (d && d.version === 2) {
       const b = blankDb();
-      for (const k of ["reminders", "todos", "board", "notes", "history"]) if (!Array.isArray(d[k])) d[k] = [];
+      for (const k of ["reminders", "todos", "board", "notes", "history", "habits", "places", "focusLog"]) if (!Array.isArray(d[k])) d[k] = [];
       if (!Array.isArray(d.folders) || !d.folders.length) d.folders = b.folders;
       for (const f of DEFAULT_FOLDERS) if (!d.folders.some((x) => x.id === f.id)) d.folders.push({ ...f });
       d.settings = { ...b.settings, ...(d.settings || {}) };
@@ -190,8 +197,15 @@ let db = loadDb();
 
 function save() {
   try { localStorage.setItem(KEY, JSON.stringify(db)); } catch (e) { toast(`Couldn't save: ${e.message}`); }
+  runHooks(hooks.afterSave);
 }
-const uid = () => db.nextId++;
+// Time-based ids so items created on different devices never collide when syncing.
+function uid() {
+  let id = Date.now() * 100 + Math.floor(Math.random() * 100);
+  if (id <= db.nextId) id = db.nextId + 1;
+  db.nextId = id;
+  return id;
+}
 const folderById = (id) => db.folders.find((f) => f.id === id) || db.folders[0];
 const isPrivate = (x) => x && x.folder === "private";
 
@@ -248,33 +262,62 @@ async function openVaultWith(key) {
   data.reminders = data.reminders || {}; data.notes = data.notes || [];
   return data;
 }
+const rand = (n) => crypto.getRandomValues(new Uint8Array(n));
+async function wrapRaw(kek, raw) {
+  const iv = rand(12);
+  return { iv: b64(iv), data: b64(await crypto.subtle.encrypt({ name: "AES-GCM", iv }, kek, raw)) };
+}
+async function unwrapRaw(kek, w) {
+  return new Uint8Array(await crypto.subtle.decrypt({ name: "AES-GCM", iv: unb64(w.iv) }, kek, unb64(w.data)));
+}
+async function useDataKey(raw) {
+  vault.raw = raw;
+  vault.key = await crypto.subtle.importKey("raw", raw, "AES-GCM", false, ["encrypt", "decrypt"]);
+}
 async function createVault(pw) {
-  const salt = crypto.getRandomValues(new Uint8Array(16));
-  const iter = 310000;
-  vault.key = await deriveKey(pw, salt, iter);
+  const raw = rand(32); const salt = rand(16); const iter = 310000;
+  db.vault = { v: 2, salt: b64(salt), iter, pw: await wrapRaw(await deriveKey(pw, salt, iter), raw) };
+  await useDataKey(raw);
   vault.data = { reminders: {}, notes: [] };
-  db.vault = { v: 1, salt: b64(salt), iter };
   await sealVault();
   log("info", "Private folder password set");
   armAutoLock();
 }
 async function unlockVault(pw) {
-  const key = await deriveKey(pw, unb64(db.vault.salt), db.vault.iter);
-  try { vault.data = await openVaultWith(key); } catch { throw new Error("Wrong password"); }
-  vault.key = key;
+  const v = db.vault;
+  const kek = await deriveKey(pw, unb64(v.salt), v.iter);
+  if (v.v === 2) {
+    let raw;
+    try { raw = await unwrapRaw(kek, v.pw); } catch { throw new Error("Wrong password"); }
+    await useDataKey(raw);
+    vault.data = await openVaultWith(vault.key);
+  } else {
+    // version 1 encrypted the data with the password key directly: upgrade to a wrapped data key
+    let data;
+    try { data = await openVaultWith(kek); } catch { throw new Error("Wrong password"); }
+    const raw = rand(32); const salt = rand(16);
+    db.vault = { v: 2, salt: b64(salt), iter: v.iter, pw: await wrapRaw(await deriveKey(pw, salt, v.iter), raw) };
+    await useDataKey(raw);
+    vault.data = data;
+    await sealVault();
+  }
+  armAutoLock();
+}
+async function unlockWithDataKey(raw) {
+  await useDataKey(raw);
+  try { vault.data = await openVaultWith(vault.key); } catch (e) { vault.key = null; vault.raw = null; throw new Error("This key no longer opens the private folder"); }
   armAutoLock();
 }
 async function changeVaultPassword(current, pw) {
   await unlockVault(current);
-  const salt = crypto.getRandomValues(new Uint8Array(16));
-  vault.key = await deriveKey(pw, salt, db.vault.iter);
-  db.vault = { ...db.vault, salt: b64(salt) };
+  const salt = rand(16);
+  db.vault = { ...db.vault, salt: b64(salt), pw: await wrapRaw(await deriveKey(pw, salt, db.vault.iter), vault.raw) };
   await sealVault();
   log("info", "Private folder password changed");
 }
 function lockVault(quiet) {
   if (!vault.key) return;
-  vault.key = null; vault.data = null;
+  vault.key = null; vault.data = null; vault.raw = null;
   clearTimeout(vault.timer);
   if (state.view === "notes" && state.noteId && !findNote(state.noteId)) state.noteId = null;
   if (!quiet) toast("Private folder locked");
@@ -296,6 +339,10 @@ function requireVault(then) {
 function rTitle(r) {
   if (!isPrivate(r)) return r.title;
   return unlocked() ? (vault.data.reminders[r.id] || {}).title || "Private reminder" : "Private reminder";
+}
+function rSubs(r) {
+  if (!isPrivate(r)) return r.subtasks || [];
+  return unlocked() ? (vault.data.reminders[r.id] || {}).subtasks || [] : [];
 }
 function rNotes(r) {
   if (!isPrivate(r)) return r.notes || "";
@@ -324,16 +371,23 @@ function cleanReminder(f) {
   if ("priority" in f) out.priority = PRIORITIES.includes(f.priority) ? f.priority : "normal";
   if ("repeat" in f) out.repeat = REPEATS.includes(f.repeat) ? f.repeat : "none";
   if ("folder" in f) out.folder = db.folders.some((x) => x.id === f.folder) ? f.folder : "personal";
+  if ("nag" in f) out.nag = Boolean(f.nag);
+  if ("geo" in f) out.geo = f.geo && f.geo.place ? { place: String(f.geo.place).slice(0, 60), when: f.geo.when === "leave" ? "leave" : "arrive" } : null;
+  if ("subtasks" in f) out.subtasks = (Array.isArray(f.subtasks) ? f.subtasks : []).filter((x) => x && String(x.text || "").trim())
+    .slice(0, 50).map((x) => ({ id: x.id || uid(), text: String(x.text).trim().slice(0, 200), done: Boolean(x.done) }));
   return out;
 }
+const PRIVATE_FIELDS = ["title", "notes", "subtasks"];
+function hidePrivate(r, vals) { vault.data.reminders[r.id] = vals; r.title = ""; r.notes = ""; r.subtasks = []; }
 function addReminder(fields) {
   const f = cleanReminder({ title: fields.title, notes: fields.notes || "", due: fields.due || null, remind_before: fields.remind_before || 0,
-    priority: fields.priority || "normal", repeat: fields.repeat || "none", folder: fields.folder || "personal" });
+    priority: fields.priority || "normal", repeat: fields.repeat || "none", folder: fields.folder || "personal",
+    nag: Boolean(fields.nag), geo: fields.geo || null, subtasks: fields.subtasks || [] });
   if (f.repeat !== "none" && !f.due) throw new Error("A repeating reminder needs a date and time");
   if (isPrivate(f) && !unlocked()) throw new Error("Unlock the Private folder first");
   snapshot("add reminder");
-  const r = { id: uid(), ...f, snoozed_until: null, reminded_at: null, done: false, completed_at: null, created_at: fmt(new Date()) };
-  if (isPrivate(r)) { vault.data.reminders[r.id] = { title: r.title, notes: r.notes }; r.title = ""; r.notes = ""; }
+  const r = { id: uid(), ...f, att: 0, snoozed_until: null, reminded_at: null, done: false, completed_at: null, created_at: fmt(new Date()) };
+  if (isPrivate(r)) hidePrivate(r, { title: r.title, notes: r.notes, subtasks: r.subtasks });
   db.reminders.push(r);
   log("created", isPrivate(r) ? "Added a private reminder" : `Added “${r.title}”`);
   persist(r);
@@ -348,19 +402,23 @@ function updateReminder(id, fields) {
   if ((wasPrivate || toPrivate) && !unlocked()) throw new Error("Unlock the Private folder first");
   if ((f.repeat ?? r.repeat) !== "none" && !("due" in f ? f.due : r.due)) throw new Error("A repeating reminder needs a date and time");
   snapshot("edit reminder");
-  const title = f.title ?? rTitle(r); const notes = f.notes ?? rNotes(r);
-  delete f.title; delete f.notes;
-  if (("due" in f && f.due !== r.due) || ("remind_before" in f && f.remind_before !== r.remind_before)) {
+  const vals = { title: f.title ?? rTitle(r), notes: f.notes ?? rNotes(r), subtasks: f.subtasks ?? rSubs(r) };
+  for (const k of PRIVATE_FIELDS) delete f[k];
+  if (("due" in f && f.due !== r.due) || ("remind_before" in f && f.remind_before !== r.remind_before) || ("geo" in f)) {
     f.reminded_at = null; f.snoozed_until = null;
   }
   Object.assign(r, f);
-  if (toPrivate) { vault.data.reminders[r.id] = { title, notes }; r.title = ""; r.notes = ""; } else {
-    r.title = title; r.notes = notes;
+  if (toPrivate) hidePrivate(r, vals); else {
+    Object.assign(r, vals);
     if (wasPrivate) delete vault.data.reminders[r.id];
   }
-  log("edited", toPrivate ? "Edited a private reminder" : `Edited “${title}”`);
+  log("edited", toPrivate ? "Edited a private reminder" : `Edited “${vals.title}”`);
   persist(r, wasPrivate);
   return r;
+}
+function toggleSubtask(r, sid) {
+  const subs = rSubs(r).map((x) => (x.id === sid ? { ...x, done: !x.done } : x));
+  updateReminder(r.id, { subtasks: subs });
 }
 function persist(item, alsoPrivate) {
   if ((isPrivate(item) || alsoPrivate) && unlocked()) sealVault(); else save();
@@ -385,6 +443,40 @@ function setDone(id, done) {
   save();
   return r;
 }
+function snoozeUntil(id, date) {
+  const r = db.reminders.find((x) => x.id === id);
+  if (!r) return null;
+  snapshot("snooze");
+  Object.assign(r, { snoozed_until: fmt(date), reminded_at: null });
+  log("snoozed", `Snoozed ${canSee(r) ? `“${rTitle(r)}”` : "a private reminder"} until ${whenText(date, new Date())}`);
+  save();
+  return r;
+}
+function smartSnoozeOptions(now = new Date()) {
+  const at = (d, hh, mm = 0) => { const x = new Date(d); x.setHours(hh, mm, 0, 0); return x; };
+  const o = [["10 minutes", addMin(now, 10)], ["30 minutes", addMin(now, 30)], ["1 hour", addMin(now, 60)]];
+  if (now < at(now, 13)) o.push(["After lunch", at(now, 14)]);
+  if (now < at(now, 17, 30)) o.push(["This evening", at(now, 18)]);
+  if (now < at(now, 20, 30)) o.push(["Tonight", at(now, 21)]);
+  const tm = new Date(now); tm.setDate(tm.getDate() + 1); o.push(["Tomorrow morning", at(tm, 9)]);
+  const nw = new Date(now); nw.setDate(nw.getDate() + (((8 - nw.getDay()) % 7) || 7)); o.push(["Next Monday", at(nw, 9)]);
+  return o;
+}
+function openSnoozeMenu(anchor, id, after) {
+  closeMenus();
+  const rect = anchor.getBoundingClientRect();
+  const menu = h("div", { class: "menu", role: "menu" },
+    h("div", { class: "menu-title" }, "Snooze until"),
+    smartSnoozeOptions().map(([label, d]) => h("button", { role: "menuitem", onclick: () => { closeMenus(); snoozeUntil(id, d); toast(`Snoozed until ${whenText(d, new Date())}`, true); if (after) after(); render(); } },
+      h("span", {}, label), h("span", { class: "muted small" }, dayDiff(d, new Date()) === 0 ? timeText(d) : `${dayLabel(d, new Date())} ${timeText(d)}`))));
+  document.body.append(menu);
+  const w = 280; const left = Math.min(window.innerWidth - w - 8, Math.max(8, rect.right - w));
+  const top = rect.bottom + 6 + menu.offsetHeight > window.innerHeight ? Math.max(8, rect.top - menu.offsetHeight - 6) : rect.bottom + 6;
+  menu.style.cssText = `left:${left}px;top:${top}px;width:${w}px`;
+  setTimeout(() => document.addEventListener("pointerdown", menuAway), 0);
+}
+function menuAway(e) { if (!e.target.closest(".menu")) closeMenus(); }
+function closeMenus() { $$(".menu").forEach((m) => m.remove()); document.removeEventListener("pointerdown", menuAway); }
 function snooze(id, minutes) {
   const r = db.reminders.find((x) => x.id === id);
   if (!r) return null;
@@ -405,7 +497,13 @@ function removeReminder(id) {
 }
 function dueNow() {
   const now = new Date();
-  const fired = db.reminders.filter((r) => !r.done && !r.reminded_at && (remindTime(r) || Infinity) <= now);
+  const fired = db.reminders.filter((r) => {
+    if (r.done) return false;
+    const t = remindTime(r);
+    if (!t || t > now) return false;
+    if (!r.reminded_at) return true;
+    return Boolean(r.nag) && now - parse(r.reminded_at) >= NAG_MS; // nagging: again every 5 minutes until done
+  });
   if (fired.length) { for (const r of fired) r.reminded_at = fmtSec(now); save(); }
   return fired;
 }
@@ -550,7 +648,7 @@ function renderSidebar(now = new Date()) {
   nav.replaceChildren(...[
     h("div", { class: "tiles" }, SMART.map(tile)),
     h("div", { class: "nav-label" }, "Workspace"),
-    WORKSPACE.map((w) => row(w.id, w.name, w.icon, w.color, c[w.id])),
+    WORKSPACE.map((w) => row(w.id, w.name, w.icon, w.color, c[w.id] ?? (w.count ? w.count(now) : null))),
     h("div", { class: "nav-label" }, "Folders", h("button", { class: "nav-add", title: "New folder", "aria-label": "New folder", onclick: () => openFolderDialog() }, icon("plus", 14))),
     folders,
   ].flat());
@@ -586,6 +684,7 @@ function renderView(now = new Date()) {
   else if (v === "notes") [content, sub] = viewNotes(now);
   else if (v === "history") [content, sub] = viewHistory(now);
   else if (v === "search") [content, sub] = viewSearch(now);
+  else if (VIEWS[v]) [content, sub] = VIEWS[v](now);
   else [content, sub] = viewReminders(v, now);
   $("#viewSub").textContent = sub;
   root.replaceChildren(content);
@@ -689,6 +788,12 @@ function reminderRow(r, now) {
   if (r.repeat !== "none") meta.push(h("span", { class: "chip" }, icon("repeat", 12), REPEAT_LABEL[r.repeat]));
   if (r.remind_before && !r.done) meta.push(h("span", { class: "chip" }, icon("bell", 12), `${r.remind_before >= 60 ? `${r.remind_before / 60} h` : `${r.remind_before} min`} before`));
   if (r.snoozed_until && !r.done) meta.push(h("span", { class: "chip" }, icon("snooze", 12), `Snoozed to ${timeText(parse(r.snoozed_until))}`));
+  const subs = rSubs(r);
+  if (subs.length) meta.push(h("span", { class: `chip${subs.every((x) => x.done) ? " okc" : ""}` }, icon("todo", 12), `${subs.filter((x) => x.done).length}/${subs.length}`));
+  if (r.geo) meta.push(h("span", { class: "chip geo" }, icon("pin", 12), `${r.geo.when === "leave" ? "Leaving" : "Arriving at"} ${placeLabel(r.geo.place)}`));
+  if (r.nag && !r.done) meta.push(h("span", { class: "chip nagc", title: "Repeats every 5 minutes until done" }, icon("repeat", 12), "Until done"));
+  if (r.att) meta.push(h("span", { class: "chip" }, icon("upload", 12), `${r.att} file${r.att > 1 ? "s" : ""}`));
+  for (const fn of hooks.rowChips) { try { const c = fn(r, now); if (c) meta.push(c); } catch (e) { console.warn(e); } }
   if (!state.view.startsWith("folder:")) meta.push(h("span", { class: "chip folder", style: `--c:${f.color}` }, h("i", { class: "dot" }), f.name));
   if (r.done && r.completed_at) meta.push(h("span", { class: "rel" }, `Completed ${whenText(parse(r.completed_at), now)}`));
 
@@ -702,16 +807,22 @@ function reminderRow(r, now) {
       notes ? h("div", { class: "rem-notes" }, notes) : null,
       meta.length ? h("div", { class: "rem-meta" }, meta) : null),
     h("div", { class: "rem-actions" },
-      !r.done ? h("button", { class: "icon-btn sm", title: "Snooze 10 minutes", "aria-label": "Snooze 10 minutes", onclick: () => act(() => snooze(r.id, 10), "Snoozed 10 min") }, icon("snooze", 15)) : null,
+      !r.done ? h("button", { class: "icon-btn sm", title: "Snooze…", "aria-label": "Snooze", onclick: (e) => openSnoozeMenu(e.currentTarget, r.id) }, icon("snooze", 15)) : null,
       h("button", { class: "icon-btn sm", title: "Edit", "aria-label": `Edit ${title}`, onclick: () => openEditor(r) }, icon("edit", 15)),
       h("button", { class: "icon-btn sm danger", title: "Delete", "aria-label": `Delete ${title}`, onclick: () => act(() => removeReminder(r.id), "Reminder deleted") }, icon("trash", 15))));
 }
 
 // The smart "add" bar: natural language with a live preview of what was understood.
+function findPlace(name) {
+  if (!name) return null;
+  const n = String(name).toLowerCase();
+  return db.places.find((p) => p.id === name || p.name.toLowerCase() === n) || null;
+}
+const placeLabel = (name) => { const p = findPlace(name); return p ? p.name : String(name).replace(/^\w/, (c) => c.toUpperCase()); };
 function parseReminderText(text, v) {
   const t = text.trim();
   const explicit = /^(?:remind|set|create|add|wake|don'?t|remember)\b/i.test(t);
-  const p = NLP.parse(explicit ? t : `remind me to ${t}`, new Date(), { folders: db.folders, dateOrder: dateOrder() });
+  const p = NLP.parse(explicit ? t : `remind me to ${t}`, new Date(), nlpOpts());
   if (p.intent !== "reminder") return null;
   if (!p.folder && v.startsWith("folder:")) p.folder = v.slice(7);
   if (!p.due && v === "today") { const d = new Date(Date.now() + 3600000); d.setMinutes(0, 0, 0); p.due = fmt(d); }
@@ -719,6 +830,7 @@ function parseReminderText(text, v) {
   return p;
 }
 const dateOrder = () => (/^en-US/i.test(navigator.language || "") ? "mdy" : "dmy");
+const nlpOpts = () => ({ folders: db.folders, places: db.places, dateOrder: dateOrder() });
 
 function composer(v, now) {
   const input = h("input", { class: "composer-input", placeholder: "Add a reminder — try “Pay rent on the 1st at 10am #work”", value: state.composer, "aria-label": "New reminder", maxlength: "300" });
@@ -743,7 +855,7 @@ function composer(v, now) {
     const t = input.value.trim();
     if (!t) { input.focus(); return; }
     const p = parseReminderText(t, v) || { title: t, due: null, repeat: "none" };
-    const fields = { title: p.title, due: p.due, repeat: p.repeat, priority: p.priority || "normal", folder: p.folder || "personal", remind_before: p.remind_before || 0 };
+    const fields = { title: p.title, due: p.due, repeat: p.repeat, priority: p.priority || "normal", folder: p.folder || "personal", remind_before: p.remind_before || 0, nag: p.nag, geo: p.geo };
     const go = () => {
       try {
         addReminder(fields);
@@ -846,6 +958,7 @@ function boardCard(c, col, now) {
       h("span", { class: "spacer" }),
       idx > 0 ? h("button", { class: "icon-btn xs", title: `Move to ${BOARD_COLS[idx - 1].name}`, "aria-label": "Move left", onclick: () => { moveCard(c.id, BOARD_COLS[idx - 1].id); renderAll(); } }, icon("left", 14)) : null,
       idx < 2 ? h("button", { class: "icon-btn xs", title: `Move to ${BOARD_COLS[idx + 1].name}`, "aria-label": "Move right", onclick: () => { moveCard(c.id, BOARD_COLS[idx + 1].id); renderAll(); } }, icon("right", 14)) : null,
+      hooks.cardActions.map((fn) => { try { return fn(c); } catch { return null; } }),
       h("button", { class: "icon-btn xs", title: c.priority === "high" ? "Unflag" : "Flag as high priority", "aria-label": "Toggle priority", onclick: () => { snapshot("flag"); c.priority = c.priority === "high" ? "normal" : "high"; save(); renderAll(); } }, icon("flagged", 13)),
       h("button", { class: "icon-btn xs danger", title: "Delete", "aria-label": `Delete ${c.title}`, onclick: () => { snapshot("delete card"); db.board = db.board.filter((x) => x !== c); log("deleted", `Deleted card “${c.title}”`); save(); renderAll(); toast("Card deleted", true); } }, icon("trash", 13))));
   title.addEventListener("dblclick", () => editInline(title, c.title, (v) => { snapshot("rename card"); c.title = v; save(); renderAll(); }));
@@ -903,6 +1016,7 @@ function viewNotes(now) {
       h("div", { class: "note-toolbar" },
         h("button", { class: "icon-btn only-mobile", "aria-label": "Back to notes", onclick: () => { state.noteId = null; renderView(); } }, icon("left", 18)),
         folderSel,
+        h("button", { class: "icon-btn", title: "Create a reminder from this note (select text first to use just that part)", "aria-label": "Remind me about this", onclick: () => remindFromNote(current, body) }, icon("bell", 16)),
         h("button", { class: `icon-btn${current.pinned ? " on" : ""}`, title: current.pinned ? "Unpin" : "Pin to top", "aria-label": "Pin", onclick: () => { updateNote(current.id, { pinned: !current.pinned }, true); renderView(); } }, icon("pin", 16)),
         h("span", { class: "spacer" }), words, status,
         h("button", { class: "icon-btn danger", title: "Delete note", "aria-label": "Delete note", onclick: () => { removeNote(current.id); renderAll(); toast("Note deleted", true); } }, icon("trash", 16))),
@@ -914,6 +1028,13 @@ function viewNotes(now) {
         h("p", { class: "muted" }, "Or say “Take a note …”"), h("button", { class: "btn primary", onclick: () => newNote() }, icon("plus", 16), "New note")));
   }
   return [h("div", { class: `notes${current ? " has-current" : ""}` }, listPane, editor), `${allNotes().length} note${allNotes().length === 1 ? "" : "s"}`];
+}
+function remindFromNote(n, ta) {
+  const sel = ta && ta.selectionEnd > ta.selectionStart ? ta.value.slice(ta.selectionStart, ta.selectionEnd).trim() : "";
+  const text = sel || n.title || firstLine(n.body) || "Note";
+  const p = parseReminderText(text.slice(0, 300), "all") || { title: text };
+  openEditor(null, { title: p.title || text, due: p.due || null, repeat: p.repeat || "none", priority: p.priority || "normal",
+    folder: n.folder === "private" ? "private" : n.folder, notes: `From note “${n.title || firstLine(n.body) || "Untitled"}”${sel && sel !== p.title ? `\n${sel}` : ""}` });
 }
 const firstLine = (s) => String(s || "").split("\n").find((l) => l.trim())?.trim().slice(0, 60) || "";
 const snippet = (n) => String(n.body || "").replace(/\s+/g, " ").slice(n.title ? 0 : firstLine(n.body).length, 120).trim() || "No additional text";
@@ -1010,8 +1131,8 @@ function openEditor(r, preset) {
   const go = () => {
     editing = r;
     const f = $("#editForm");
-    const src = r ? { title: rTitle(r), notes: rNotes(r), due: r.due, remind_before: r.remind_before, priority: r.priority, repeat: r.repeat, folder: r.folder }
-      : { title: "", notes: "", due: null, remind_before: 0, priority: "normal", repeat: "none", folder: defaultFolder(), ...(preset || {}) };
+    const src = r ? { title: rTitle(r), notes: rNotes(r), due: r.due, remind_before: r.remind_before, priority: r.priority, repeat: r.repeat, folder: r.folder, nag: r.nag, geo: r.geo, subtasks: rSubs(r) }
+      : { title: "", notes: "", due: null, remind_before: 0, priority: "normal", repeat: "none", folder: defaultFolder(), nag: false, geo: null, subtasks: [], ...(preset || {}) };
     $("#editTitle").textContent = r ? "Edit reminder" : "New reminder";
     f.title.value = src.title || "";
     f.notes.value = src.notes || "";
@@ -1022,6 +1143,11 @@ function openEditor(r, preset) {
     f.priority.value = src.priority || "normal";
     f.repeat.value = src.repeat || "none";
     fillFolderSelect(f.folder, src.folder || "personal");
+    f.nag.checked = Boolean(src.nag);
+    fillGeoSelect(f.geo, src.geo);
+    editSubs = (src.subtasks || []).map((x) => ({ ...x }));
+    renderSubs();
+    runHooks(hooks.editorOpen, r, src);
     $("#editDelete").hidden = !r;
     $("#editError").textContent = "";
     $("#editDialog").showModal();
@@ -1029,6 +1155,34 @@ function openEditor(r, preset) {
   };
   if (r && isPrivate(r)) requireVault(go); else go();
 }
+let editSubs = [];
+function fillGeoSelect(sel, geo) {
+  const opts = [h("option", { value: "" }, "No location")];
+  const known = new Set();
+  for (const p of db.places) {
+    known.add(p.name.toLowerCase());
+    opts.push(h("option", { value: `arrive:${p.id}` }, `Arriving at ${p.name}`), h("option", { value: `leave:${p.id}` }, `Leaving ${p.name}`));
+  }
+  if (geo && geo.place && !findPlace(geo.place)) opts.push(h("option", { value: `${geo.when}:${geo.place}` }, `${geo.when === "leave" ? "Leaving" : "Arriving at"} ${placeLabel(geo.place)} (not set up)`));
+  if (!db.places.length) opts.push(h("option", { value: "", disabled: true }, "Add places in Settings → Places"));
+  fill(sel, opts);
+  const p = geo && findPlace(geo.place);
+  sel.value = geo ? `${geo.when}:${p ? p.id : geo.place}` : "";
+}
+function renderSubs() {
+  const list = $("#subList");
+  fill(list, editSubs.map((x, i) => h("div", { class: "sub-row" },
+    h("input", { type: "checkbox", checked: x.done, "aria-label": "Done", onchange: (e) => { x.done = e.target.checked; renderSubs(); } }),
+    h("input", { class: "sub-text", value: x.text, maxlength: "200", "aria-label": "Step", oninput: (e) => { x.text = e.target.value; } }),
+    h("button", { type: "button", class: "icon-btn xs danger", "aria-label": "Remove step", onclick: () => { editSubs.splice(i, 1); renderSubs(); } }, icon("x", 13)))));
+  $("#subCount").textContent = editSubs.length ? `${editSubs.filter((x) => x.done).length}/${editSubs.length}` : "";
+}
+$("#subAdd").addEventListener("keydown", (e) => {
+  if (e.key !== "Enter") return;
+  e.preventDefault();
+  const v = e.target.value.trim(); if (!v) return;
+  editSubs.push({ id: uid(), text: v, done: false }); e.target.value = ""; renderSubs();
+});
 $("#quickDates").addEventListener("click", (e) => {
   const q = e.target.closest("button")?.dataset.q; if (!q) return;
   const f = $("#editForm"); const d = new Date(); d.setSeconds(0, 0);
@@ -1046,10 +1200,13 @@ $("#editForm").addEventListener("submit", (e) => {
   const f = e.target;
   let due = null;
   if (f.date.value || f.time.value) due = `${f.date.value || fmt(new Date()).slice(0, 10)}T${f.time.value || "09:00"}`;
-  const fields = { title: f.title.value, notes: f.notes.value, due, remind_before: Number(f.remind_before.value), priority: f.priority.value, repeat: f.repeat.value, folder: f.folder.value };
+  const [gw, ...gp] = (f.geo.value || "").split(":");
+  const fields = { title: f.title.value, notes: f.notes.value, due, remind_before: Number(f.remind_before.value), priority: f.priority.value, repeat: f.repeat.value, folder: f.folder.value,
+    nag: f.nag.checked, geo: gp.length ? { when: gw, place: gp.join(":") } : null, subtasks: editSubs.filter((x) => x.text.trim()) };
   const go = () => {
     try {
-      if (editing) updateReminder(editing.id, fields); else addReminder(fields);
+      const saved = editing ? updateReminder(editing.id, fields) : addReminder(fields);
+      runHooks(hooks.editorSave, saved);
       $("#editDialog").close();
       toast(editing ? "Reminder updated" : `Added “${fields.title.trim()}”`, true);
       render();
@@ -1080,6 +1237,7 @@ function openVaultDialog(mode) {
   f.pw.autocomplete = mode === "unlock" ? "current-password" : "new-password";
   f.pw2.hidden = mode === "unlock";
   $("#vaultReset").hidden = mode !== "unlock";
+  runHooks(hooks.vaultDialog, mode);
   $("#vaultError").textContent = "";
   $("#vaultDialog").showModal();
   setTimeout(() => (mode === "change" ? f.current : f.pw).focus(), 50);
@@ -1185,7 +1343,7 @@ function openSettings() {
       perm === "default" ? h("button", { class: "btn primary sm", onclick: async () => { await Notification.requestPermission(); updateNotifyBtn(); openSettings(); } }, "Enable") : null),
     toggle("announce", "Read reminders aloud", "Speaks the reminder when it's due (private ones stay private)."),
     h("h3", {}, "Voice assistant"),
-    select("voiceLang", "Language / accent", [["en-IN", "English (India)"], ["en-US", "English (US)"], ["en-GB", "English (UK)"], ["en-AU", "English (Australia)"], ["en-CA", "English (Canada)"]]),
+    select("voiceLang", "Language / accent", [["en-IN", "English (India)"], ["en-US", "English (US)"], ["en-GB", "English (UK)"], ["en-AU", "English (Australia)"], ["en-CA", "English (Canada)"], ["ta-IN", "தமிழ் (Tamil)"]]),
     toggle("speak", "Spoken replies", "The assistant answers out loud.", syncSpeakBtn),
     toggle("handsFree", "Hands-free “Hey Reminders”", "Listens for the wake phrase while the app is open (Chrome/Edge).", () => { if (s.handsFree) startWake(); else stopWake(); }),
     !SR ? h("p", { class: "warn" }, "This browser has no speech recognition. Use Chrome, Edge or Safari for voice; typing commands works everywhere.") : null,
@@ -1202,6 +1360,7 @@ function openSettings() {
       h("div", { class: "row-btns" },
         h("button", { class: "btn ghost sm", onclick: exportBackup }, icon("download", 14), "Export"),
         h("button", { class: "btn ghost sm", onclick: () => $("#importFile").click() }, icon("upload", 14), "Import"))),
+    hooks.settings.map((fn) => { try { return fn({ toggle, select, s }); } catch (e) { console.warn(e); return null; } }),
     h("h3", {}, "Keyboard"),
     h("div", { class: "muted small keys" }, h("kbd", {}, "Ctrl K"), " assistant  ·  ", h("kbd", {}, "N"), " new item  ·  ", h("kbd", {}, "/"), " search  ·  ", h("kbd", {}, "Esc"), " close"),
   );
@@ -1210,10 +1369,25 @@ function openSettings() {
 $("#settingsClose").addEventListener("click", () => $("#settingsDialog").close());
 $("#settingsBtn").addEventListener("click", () => { closeSidebar(); openSettings(); });
 
+const ACCENTS = {
+  indigo: ["#4f46e5", "#6366f1", "#8b84ff"], blue: ["#2563eb", "#3b82f6", "#60a5fa"], teal: ["#0d9488", "#14b8a6", "#2dd4bf"],
+  green: ["#16a34a", "#22c55e", "#4ade80"], rose: ["#e11d48", "#f43f5e", "#fb7185"], orange: ["#ea580c", "#f97316", "#fb923c"],
+  purple: ["#9333ea", "#a855f7", "#c084fc"], slate: ["#334155", "#475569", "#94a3b8"],
+};
+const darkMq = window.matchMedia ? matchMedia("(prefers-color-scheme: dark)") : null;
 function applyTheme() {
   const t = db.settings.theme;
-  if (t === "system") delete document.documentElement.dataset.theme; else document.documentElement.dataset.theme = t;
+  const root = document.documentElement;
+  if (t === "system") delete root.dataset.theme; else root.dataset.theme = t;
+  const dark = t === "dark" || (t === "system" && darkMq && darkMq.matches);
+  const a = ACCENTS[db.settings.accent] || ACCENTS.indigo;
+  root.style.setProperty("--accent", dark ? a[2] : a[0]);
+  root.style.setProperty("--accent-2", dark ? a[2] : a[1]);
+  root.style.setProperty("--accent-deep", a[0]);
+  root.style.setProperty("--accent-soft", "color-mix(in srgb, var(--accent) 15%, var(--surface))");
+  const meta = document.querySelector('meta[name="theme-color"]'); if (meta) meta.content = a[0];
 }
+if (darkMq && darkMq.addEventListener) darkMq.addEventListener("change", applyTheme);
 
 function exportBackup() {
   const blob = new Blob([JSON.stringify(db, null, 2)], { type: "application/json" });
@@ -1305,30 +1479,34 @@ function remind(r) {
   lastFired = r.id;
   const due = parse(r.due);
   const title = canSee(r) ? rTitle(r) : "Private reminder";
-  const text = due ? `Due ${whenText(due, new Date())}` : "Reminder";
-  chime();
+  const text = r.geo && !due ? `${r.geo.when === "leave" ? "Leaving" : "Arrived at"} ${placeLabel(r.geo.place)}` : due ? `Due ${whenText(due, new Date())}` : "Reminder";
+  if (typeof playAlarm === "function") playAlarm(r); else chime();
   systemNotify(r, `⏰ ${title}`, canSee(r) && rNotes(r) ? `${text}\n${rNotes(r)}` : text);
   if (db.settings.announce) setTimeout(() => say(isPrivate(r) ? "You have a private reminder." : `Reminder: ${title}`, null, true), 900);
   log("reminded", isPrivate(r) ? "Private reminder went off" : `Reminder went off: “${title}”`);
   const f = folderById(r.folder);
   const box = h("div", { class: `alert p-${r.priority}`, style: `--c:${f.color}`, role: "alertdialog", "aria-label": `Reminder: ${title}` },
     h("div", { class: "alert-icon" }, icon("bell", 20)),
-    h("div", { class: "alert-body" }, h("strong", {}, title), h("span", { class: "muted" }, `${text} · ${f.name}`)),
+    h("div", { class: "alert-body" }, h("strong", {}, title), h("span", { class: "muted" }, `${text} · ${f.name}${r.nag ? " · repeats until done" : ""}`)),
     h("div", { class: "alert-actions" },
       h("button", { class: "btn primary sm", onclick: () => { box.remove(); act(() => setDone(r.id, true), "Completed"); } }, "Done"),
       h("button", { class: "btn ghost sm", onclick: () => { box.remove(); act(() => snooze(r.id, 10), "Snoozed 10 min"); } }, "10 min"),
-      h("button", { class: "btn ghost sm", onclick: () => { box.remove(); act(() => snooze(r.id, 60), "Snoozed 1 hour"); } }, "1 hour"),
+      h("button", { class: "btn ghost sm", onclick: (e) => openSnoozeMenu(e.currentTarget, r.id, () => box.remove()) }, "Later…"),
       h("button", { class: "icon-btn sm", "aria-label": "Dismiss", onclick: () => box.remove() }, icon("x", 14))));
+  $$("#alerts .alert").forEach((a) => { if (a.dataset.rid === String(r.id)) a.remove(); });
+  box.dataset.rid = String(r.id);
   $("#alerts").append(box);
 }
 function checkReminders() {
   for (const r of dueNow()) remind(r);
+  runHooks(hooks.tick);
   renderSidebar();
   const a = document.activeElement;
   const typing = a && $("#view").contains(a) && /^(INPUT|TEXTAREA|SELECT)$/.test(a.tagName);
   if (!typing && !document.querySelector("dialog[open]")) renderView();
 }
 function handleAction(id, action) {
+  if (action === "briefing") { if (typeof showBriefing === "function") showBriefing(); return; }
   id = Number(id);
   if (action === "done") setDone(id, true); else if (action === "snooze") snooze(id, 10);
   render();
@@ -1470,7 +1648,7 @@ function handleCommand(text, fromVoice) {
   as.voiceMode = Boolean(fromVoice);
   addBubble("user", text);
   const now = new Date();
-  const opts = { folders: db.folders, dateOrder: dateOrder() };
+  const opts = nlpOpts();
 
   // answering a follow-up question?
   const pend = as.pending;
@@ -1493,14 +1671,35 @@ function handleCommand(text, fromVoice) {
   }
 
   const p = NLP.parse(text, now, opts);
+  if (aiWanted(p) && typeof aiAssist === "function") return aiAssist(text, p);
+  return dispatch(p, text, now);
+}
+const isTamil = () => /^ta/i.test(db.settings.voiceLang || "");
+const T = (en, ta) => (isTamil() && ta ? ta : en);
+function taWhen(due) {
+  if (!due) return "";
+  const d = parse(due); const n = dayDiff(d, new Date());
+  const day = n === 0 ? "இன்று" : n === 1 ? "நாளை" : n === 2 ? "நாளை மறுநாள்" : d.toLocaleDateString("ta-IN", { weekday: "long", day: "numeric", month: "long" });
+  const hr = d.getHours(); const part = hr < 12 ? "காலை" : hr < 16 ? "மதியம்" : hr < 19 ? "மாலை" : "இரவு";
+  return `${day} ${part} ${hr % 12 || 12}:${pad(d.getMinutes())} மணிக்கு`;
+}
+// Should an unclear command go to the AI model? (only when the user turned it on)
+function aiWanted(p) {
+  if (!db.settings.ai || (!db.settings.aiKey && !db.settings.server)) return false;
+  return p.intent === "unknown" || (p.intent === "reminder" && !p.explicit && !p.due && !p.geo);
+}
+function remember(kind, item) { as.last = item ? { kind, id: item.id } : null; }
+function dispatch(p, text, now = new Date()) {
+  const opts = nlpOpts();
   switch (p.intent) {
     case "reminder": return continueReminder(p, text);
     case "todo": {
-      try { const t = addTodo(p.title); render(); return reply(`Added “${t.text}” to your to-do list.`, resultCard("To-do", t.text, "To-Do List", "#10b981", [undoBtn(), h("button", { class: "btn ghost sm", onclick: () => setView("todo") }, "Open")])); } catch (e) { return reply(e.message); }
+      try { const t = addTodo(p.title); remember("todo", t); render(); return reply(T(`Added “${t.text}” to your to-do list.`, `“${t.text}” உங்கள் பட்டியலில் சேர்க்கப்பட்டது.`), resultCard("To-do", t.text, "To-Do List", "#10b981", [undoBtn(), h("button", { class: "btn ghost sm", onclick: () => setView("todo") }, "Open")])); } catch (e) { return reply(e.message); }
     }
     case "board": {
       try {
         const c = addCard(p.title, p.status, { priority: p.priority || "normal", due: p.due });
+        remember("board", c);
         render();
         return reply(`Added “${c.title}” to Things to Do${p.status === "doing" ? ", in progress" : ""}.`, resultCard("Things to Do", c.title, BOARD_COLS.find((x) => x.id === c.status).name, "#06b6d4", [undoBtn(), h("button", { class: "btn ghost sm", onclick: () => setView("board") }, "Open")]));
       } catch (e) { return reply(e.message); }
@@ -1510,8 +1709,9 @@ function handleCommand(text, fromVoice) {
       const go = () => {
         try {
           const n = addNote({ title: p.body ? p.title : "", body: p.body, folder });
+          remember("note", n);
           render();
-          reply(p.body ? "Got it, I've saved that note." : "I've created a new note for you.", resultCard("Note", n.title || "New note", p.body ? p.body.slice(0, 140) : "Empty note", "#eab308",
+          reply(p.body ? T("Got it, I've saved that note.", "சரி, குறிப்பைச் சேமித்தேன்.") : "I've created a new note for you.", resultCard("Note", n.title || "New note", p.body ? p.body.slice(0, 140) : "Empty note", "#eab308",
             [undoBtn(), h("button", { class: "btn ghost sm", onclick: () => { state.noteId = n.id; setView("notes"); closeAssistant(); } }, "Open")]));
         } catch (e) { reply(e.message); }
       };
@@ -1519,7 +1719,7 @@ function handleCommand(text, fromVoice) {
       return go();
     }
     case "query": return answerQuery(p.range, now);
-    case "time": { const t = timeText(now); return reply(`It's ${t}.`, resultCard("Time", t, now.toLocaleDateString("en-GB", { weekday: "long", day: "numeric", month: "long" }), "#3b82f6")); }
+    case "time": { const t = timeText(now); return reply(T(`It's ${t}.`, `இப்போது நேரம் ${t}.`), resultCard("Time", t, now.toLocaleDateString("en-GB", { weekday: "long", day: "numeric", month: "long" }), "#3b82f6")); }
     case "date": { const d = now.toLocaleDateString("en-GB", { weekday: "long", day: "numeric", month: "long", year: "numeric" }); return reply(`Today is ${d}.`); }
     case "snooze": {
       const id = lastFired || [...db.reminders].filter((r) => r.reminded_at && !r.done).sort((a, b) => String(b.reminded_at).localeCompare(String(a.reminded_at)))[0]?.id;
@@ -1531,11 +1731,23 @@ function handleCommand(text, fromVoice) {
     case "navigate": {
       const target = p.target;
       if (target === "settings") { closeAssistant(); return openSettings(); }
+      if (VIEWS[target] && !WORKSPACE.some((w) => w.id === target)) return reply("That view isn't available.");
       if (target === "folder:private" && !unlocked()) { reply("Your private folder is locked. Please enter your password."); setView(target); return openVaultDialog(db.vault ? "unlock" : "setup"); }
       setView(target);
-      return reply(`Here's ${target.startsWith("folder:") ? `your ${folderById(target.slice(7)).name} folder` : { notes: "your notepad", todo: "your to-do list", board: "Things to Do", history: "your history", overdue: "what's overdue", today: "today", scheduled: "your schedule", all: "all your reminders", flagged: "your flagged reminders" }[target]}.`);
+      return reply(`Here's ${target.startsWith("folder:") ? `your ${folderById(target.slice(7)).name} folder` : { notes: "your notepad", todo: "your to-do list", board: "Things to Do", history: "your history", overdue: "what's overdue", today: "today", scheduled: "your schedule", all: "all your reminders", flagged: "your flagged reminders", calendar: "your calendar", habits: "your habits", focus: "the focus timer", insights: "your insights" }[target] || "that"}.`);
     }
     case "complete": return completeByName(p.query);
+    case "modify": return modifyLast(p);
+    case "snoozeUntil": {
+      const id = lastFired || as.last?.id;
+      const r = id && db.reminders.find((x) => x.id === id);
+      if (!r) return reply("There's no reminder to snooze right now.");
+      snoozeUntil(r.id, parse(p.due)); $$("#alerts .alert").forEach((a) => a.remove()); render();
+      return reply(`OK, I'll remind you again ${NLP.whenPhrase(p.due, new Date())}.`);
+    }
+    case "briefing": case "summary": case "focusStart": case "focusStop": case "habitAdd": case "habitCheck":
+      if (typeof extraIntent === "function") return extraIntent(p, text);
+      return reply("That feature isn't loaded yet.");
     case "delete": return deleteByName(p.query, p.kind);
     case "undo": { const l = undo(); return reply(l ? `OK, I've undone the last ${l}.` : "There's nothing to undo."); }
     case "lock": lockVault(true); return reply(db.vault ? "Your private folder is locked." : "You haven't set a private folder password yet.");
@@ -1544,19 +1756,74 @@ function handleCommand(text, fromVoice) {
     case "greet": return reply(`${greeting()}! Ask me to remind you about anything.`);
     case "thanks": return reply(["You're welcome!", "Happy to help!", "Anytime!"][Math.floor(Math.random() * 3)]);
     case "stop": return closeAssistant();
-    default: return reply("Sorry, I didn't catch that. Try “Remind me to … at …”.");
+    default: return reply(T("Sorry, I didn't catch that. Try “Remind me to … at …”.", "மன்னிக்கவும், புரியவில்லை. “நாளை 5 மணிக்கு … நினைவூட்டு” என்று சொல்லுங்கள்."));
   }
 }
 
+// "move it to 6", "make it weekly", "put it in work", "rename it …", "delete it" — acts on the last thing created or mentioned
+function modifyLast(p) {
+  const last = as.last;
+  if (!last) return reply("Which one? Create or mention a reminder first, then say things like “move it to 6”.");
+  if (last.kind !== "reminder") {
+    const list = { todo: db.todos, board: db.board, note: allNotes() }[last.kind] || [];
+    const it = list.find((x) => x.id === last.id);
+    if (!it) return reply("I can't find that item any more.");
+    if (p.del) { snapshot("delete"); if (last.kind === "todo") db.todos = db.todos.filter((x) => x !== it); else if (last.kind === "board") db.board = db.board.filter((x) => x !== it); else removeNote(it.id); save(); render(); return reply("Deleted it.", null); }
+    if (p.done) { if (last.kind === "todo") toggleTodo(it.id); else if (last.kind === "board") moveCard(it.id, "done"); render(); return reply("Marked it as done."); }
+    if (p.rename) { snapshot("rename"); if (last.kind === "todo") it.text = p.rename; else if (last.kind === "board") it.title = p.rename; else updateNote(it.id, { title: p.rename }); save(); render(); return reply(`Renamed it to “${p.rename}”.`); }
+    return reply("I can only rename, complete or delete that item.");
+  }
+  const r = db.reminders.find((x) => x.id === last.id);
+  if (!r) return reply("I can't find that reminder any more.");
+  const go = () => {
+    try {
+      if (p.del) { removeReminder(r.id); render(); return reply(`Deleted “${rTitle(r) || "the reminder"}”.`, resultCard("Deleted", rTitle(r), "Reminder", "#ef4444", [undoBtn()])); }
+      if (p.done) { setDone(r.id, true); render(); return reply(`Marked “${rTitle(r)}” as done.`, null); }
+      if (p.calendar) { if (typeof downloadICS === "function") downloadICS([r], rTitle(r)); return reply("Here's a calendar file for it — open it to add it to your calendar.", h("a", { class: "btn ghost sm", href: typeof gcalUrl === "function" ? gcalUrl(r) : "#", target: "_blank", rel: "noopener" }, "Open in Google Calendar")); }
+      const ch = { ...p.changes };
+      if (p.rename) ch.title = p.rename;
+      if (p.notesAppend) ch.notes = [rNotes(r), p.notesAppend].filter(Boolean).join("\n");
+      if (p.timeOnly && ch.due && r.due) {
+        let hm = ch.due.slice(11);
+        if (p.time && !p.time.mer && p.time.h >= 1 && p.time.h <= 12) {
+          // "move it to 8" after a 7 PM reminder means 8 PM: take the AM/PM closest to the current time
+          const cur = parse(r.due).getHours(); const a = p.time.h % 12; const b = a + 12;
+          hm = `${pad(Math.abs(b - cur) < Math.abs(a - cur) ? b : a)}:${pad(p.time.m)}`;
+        }
+        let d = `${r.due.slice(0, 10)}T${hm}`;
+        if (parse(d) <= new Date() && dayDiff(parse(r.due), new Date()) <= 0) d = ch.due;
+        ch.due = d;
+      }
+      if (ch.repeat && !(ch.due || r.due)) ch.due = fmt(new Date(Date.now() + 3600000));
+      if (!Object.keys(ch).length) return reply("What should I change? For example “move it to 6 pm” or “make it weekly”.");
+      const u = updateReminder(r.id, ch);
+      render();
+      const bits = [];
+      if (ch.due) bits.push(`moved to ${NLP.whenPhrase(u.due, new Date())}`);
+      if (ch.repeat) bits.push(`repeats ${REPEAT_LABEL[ch.repeat].toLowerCase()}`);
+      if (ch.priority) bits.push(ch.priority === "high" ? "marked urgent" : `priority ${ch.priority}`);
+      if (ch.folder) bits.push(`moved to ${folderById(ch.folder).name}`);
+      if (ch.title) bits.push(`renamed to “${ch.title}”`);
+      if (ch.notes) bits.push("note added");
+      if (ch.nag) bits.push("I'll keep reminding you until it's done");
+      if (ch.geo) bits.push(`${ch.geo.when === "leave" ? "when you leave" : "when you get to"} ${placeLabel(ch.geo.place)}`);
+      if (ch.remind_before != null) bits.push(`${ch.remind_before} minutes early`);
+      return reply(`Done — ${bits.join(", ")}.`, resultCard("Updated", rTitle(u), u.due ? whenText(parse(u.due), new Date()) : "No date", folderById(u.folder).color, [undoBtn()]));
+    } catch (e) { return reply(e.message); }
+  };
+  if (isPrivate(r) || p.changes.folder === "private") return requireVault(go);
+  return go();
+}
+
 function continueReminder(p, raw) {
-  const data = { title: p.title, due: p.due, hasTime: p.hasTime, repeat: p.repeat || "none", priority: p.priority || "normal", folder: p.folder || defaultFolderForVoice(), remind_before: p.remind_before || 0 };
+  const data = { title: p.title, due: p.due, hasTime: p.hasTime, repeat: p.repeat || "none", priority: p.priority || "normal", folder: p.folder || defaultFolderForVoice(), remind_before: p.remind_before || 0, nag: p.nag, geo: p.geo };
   if (!data.title) {
     as.pending = { type: "title", data }; renderChips();
     return reply("What would you like me to remind you about?", null, { listen: true });
   }
-  if (!data.due && (p.explicit || as.voiceMode)) {
+  if (!data.due && !data.geo && (p.explicit || as.voiceMode)) {
     as.pending = { type: "when", data }; renderChips();
-    return reply(`When should I remind you to ${NLP.toSecondPerson(data.title.toLowerCase())}?`, null, { listen: true });
+    return reply(T(`When should I remind you to ${NLP.toSecondPerson(data.title.toLowerCase())}?`, `“${data.title}” எப்போது நினைவூட்ட வேண்டும்?`), null, { listen: true });
   }
   return finishReminder(data, raw);
 }
@@ -1567,12 +1834,16 @@ function finishReminder(data) {
   const go = () => {
     try {
       const r = addReminder(data);
+      remember("reminder", r);
       render();
       const f = folderById(r.folder);
       const when = r.due ? NLP.whenPhrase(r.due, new Date()) : "";
       const rep = r.repeat !== "none" ? `, ${REPEAT_LABEL[r.repeat].toLowerCase()}` : "";
       const subject = NLP.toSecondPerson(data.title.charAt(0).toLowerCase() + data.title.slice(1));
-      const text = r.due ? `OK, I'll remind you to ${subject} ${when}${rep}.` : `OK, I added “${data.title}” to your reminders.`;
+      let text = r.due ? `OK, I'll remind you to ${subject} ${when}${rep}${r.nag ? ", and keep reminding you until it's done" : ""}.`
+        : r.geo ? `OK, I'll remind you to ${subject} ${r.geo.when === "leave" ? "when you leave" : "when you get to"} ${placeLabel(r.geo.place)}.` : `OK, I added “${data.title}” to your reminders.`;
+      if (isTamil()) text = r.due ? `சரி, ${taWhen(r.due)} “${data.title}” என்று நினைவூட்டுகிறேன்.` : `சரி, “${data.title}” சேர்க்கப்பட்டது.`;
+      if (r.geo && !findPlace(r.geo.place)) setTimeout(() => addBubble("bot", `I don't know where “${placeLabel(r.geo.place)}” is yet. Add it in Settings → Places (stand there and tap “Use my current location”).`), 300);
       reply(text, resultCard(`Reminder · ${f.name}`, data.title, [r.due ? whenText(parse(r.due), new Date()) : "No date", r.repeat !== "none" ? REPEAT_LABEL[r.repeat] : null, r.priority === "high" ? "High priority" : null, r.remind_before ? `${r.remind_before} min early` : null].filter(Boolean).join(" · "), f.color,
         [undoBtn(), h("button", { class: "btn ghost sm", onclick: () => openEditor(r) }, icon("edit", 14), "Edit")]));
       if ("Notification" in window && Notification.permission === "default" && !as.tipShown && (as.tipShown = true)) setTimeout(() => addBubble("bot", "Tip: enable notifications so reminders reach you even when this tab is in the background.", h("button", { class: "btn primary sm", onclick: async (e) => { await Notification.requestPermission(); e.target.remove(); updateNotifyBtn(); } }, "Enable notifications")), 400);
@@ -1624,7 +1895,9 @@ function findItems(query, kinds = ["reminder", "todo", "board", "note"]) {
 }
 function completeByName(q) {
   const m = findItems(q, ["reminder", "todo", "board"])[0];
+  if (!m && typeof checkHabitByName === "function" && checkHabitByName(q)) return null;
   if (!m) return reply(`I couldn't find anything called “${q}”.`);
+  remember(m.kind, m.item);
   if (m.kind === "reminder") setDone(m.item.id, true);
   else if (m.kind === "todo") toggleTodo(m.item.id);
   else moveCard(m.item.id, "done");

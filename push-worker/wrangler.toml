@@ -6,6 +6,8 @@ compatibility_date = "2025-09-01"
 # Pages origin(s) allowed to call this worker (comma separated)
 ALLOWED_ORIGINS = "https://deivaprakash56.github.io,http://localhost:8765,http://127.0.0.1:8765"
 VAPID_SUBJECT = "https://deivaprakash56.github.io/Custom-Reminder-Application/"
+# Name shown to people waiting for access ("… has been asked to approve your account")
+ADMIN_NAME = "Deivaprakash"
 # AI_MODEL = "claude-opus-5-5"
 
 [[durable_objects.bindings]]

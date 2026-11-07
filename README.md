@@ -105,20 +105,24 @@ There is no password recovery: "Forgot password?" wipes the private items.
 ## Beta accounts: sign-in, sign-up and where the data lives
 
 When a server is configured, Nudge shows a **sign-in page** (`docs/login.html`) with **Create account**
-and **Forgot password?**. Only email addresses you approve can create an account. Each account's data
+and **Forgot password?**. Emails you approved in advance get straight in. Anyone else who signs up
+becomes an **access request**: the sign-in page tells them Deivaprakash has been asked to approve
+their account, and they can sign in once you approve it. Each account's data
 syncs across that person's phone and computer, and still works offline.
 
 ### Set it up (once)
 
 1. Deploy the companion worker (steps in the next section). This version adds an `Accounts` store, so
    run `npx wrangler deploy` again if you deployed it before.
-2. Create your admin password (a long random string) and store it on the worker:
+2. The name shown to people waiting for approval is `ADMIN_NAME` in `push-worker/wrangler.toml`
+   ("Deivaprakash") and `adminName` in `docs/config.js`.
+3. Create your admin password (a long random string) and store it on the worker:
    ```bash
    cd push-worker
    node -e "console.log(require('crypto').randomBytes(24).toString('base64url'))"
    npx wrangler secret put ADMIN_TOKEN
    ```
-3. Put the worker URL in `docs/config.js` and commit it (it is public; it's not a secret):
+4. Put the worker URL in `docs/config.js` and commit it (it is public; it's not a secret):
    ```js
    window.NUDGE_CONFIG = { api: "https://reminders-push.<you>.workers.dev" };
    ```
@@ -130,7 +134,10 @@ syncs across that person's phone and computer, and still works offline.
 Open **https://deivaprakash56.github.io/Custom-Reminder-Application/docs/admin.html**, paste the
 server URL and your `ADMIN_TOKEN`, and tap **Connect**. There you can:
 
-- **Approve emails**: paste testers' addresses. Send them the app link; they tap **Create account**.
+- **Access requests**: people who signed up without an invitation. **Approve** lets them sign in right
+  away with the password they chose; **Decline** removes the request.
+- **Approve emails** in advance: paste testers' addresses. Send them the app link; they tap
+  **Create account** and get straight in.
 - See every **account**: when they joined, last signed in and last synced, and how much data they have.
 - **Reset password**: gives a one-time code (valid 48 hours) to send the tester. They tap
   **Forgot password?**, enter the code and choose a new password. All their other devices are signed out.
@@ -257,7 +264,7 @@ python3 -m unittest discover -s tests -v     # PC server
 node --test tests/test_nlp.js                # voice / natural-language parser, incl. Tamil (Node 18+)
 node --test tests/test_webpush.mjs           # Web Push encryption against the RFC 8291 test vector
 node --test tests/test_worker.mjs            # companion worker: schedule, alarms, nagging, sync
-node --test tests/test_accounts.mjs          # beta accounts: approved sign-up, sign-in, lockout, reset, admin
+node --test tests/test_accounts.mjs          # beta accounts: access requests, sign-in, lockout, reset, admin
 ```
 
 ## Files

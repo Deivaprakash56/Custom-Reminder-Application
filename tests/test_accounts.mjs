@@ -19,7 +19,7 @@ function namespace(Cls, env) {
   const objs = new Map();
   return { idFromName: (n) => n, get: (id) => { if (!objs.has(id)) objs.set(id, new Cls(memoryState(), env)); return { fetch: (r) => objs.get(id).fetch(r) }; } };
 }
-const env = { ALLOWED_ORIGINS: "https://deivaprakash56.github.io", ADMIN_TOKEN: "admin-secret-token-for-tests-0123456789" };
+const env = { ALLOWED_ORIGINS: "https://deivaprakash56.github.io", ADMIN_TOKEN: "admin-secret-token-for-tests-0123456789", ADMIN_NAME: "Deivaprakash" };
 env.ACCOUNTS = namespace(Accounts, env);
 env.SYNC = namespace(SyncRoom, env);
 
@@ -37,25 +37,53 @@ let token;
 test("admin endpoints need the admin token", async () => {
   assert.equal((await call("GET", "/admin/users")).status, 401);
   assert.equal((await call("GET", "/admin/users", null, "wrong")).status, 401);
+  assert.equal((await call("POST", "/admin/approve", { email: "x@example.com" })).status, 401);
   const r = await admin("GET", "users");
   assert.equal(r.status, 200);
   assert.deepEqual(r.body, { users: [], allow: [] });
 });
 
-test("only approved emails can sign up", async () => {
+test("unknown emails become access requests the admin approves", async () => {
   const key = await loginKey(EMAIL, "correct horse battery");
   const r = await call("POST", "/auth/signup", { email: EMAIL, key, name: "Priya" });
-  assert.equal(r.status, 403);
-  assert.match(r.body.error, /approved/);
-  assert.equal((await admin("POST", "allow", { emails: "priya@example.com, ravi@example.com" })).status, 200);
-  assert.equal((await admin("POST", "allow", { emails: ["not-an-email"] })).status, 400);
-  const ok = await call("POST", "/auth/signup", { email: EMAIL, key, name: "Priya" });
+  assert.equal(r.status, 202);
+  assert.equal(r.body.pending, true);
+  assert.equal(r.body.token, undefined);
+  assert.match(r.body.message, /Access requested\. Deivaprakash has been asked to approve/);
+  // signing up again just says it's still waiting
+  const again = await call("POST", "/auth/signup", { email: EMAIL, key });
+  assert.equal(again.status, 202);
+  assert.match(again.body.message, /already requested/);
+  // the right password tells them it's pending; a wrong one doesn't reveal anything
+  const pend = await call("POST", "/auth/login", { email: EMAIL, key });
+  assert.equal(pend.status, 403);
+  assert.equal(pend.body.pending, true);
+  assert.match(pend.body.error, /waiting for Deivaprakash's approval/);
+  assert.equal((await call("POST", "/auth/login", { email: EMAIL, key: await loginKey(EMAIL, "wrong one 123") })).body.error, "Wrong email or password");
+  // the admin sees the request and approves it
+  const list = await admin("GET", "users");
+  assert.equal(list.body.users.find((u) => u.email === "priya@example.com").pending, true);
+  assert.equal((await admin("POST", "approve", { email: "priya@example.com" })).status, 200);
+  const ok = await call("POST", "/auth/login", { email: EMAIL, key });
   assert.equal(ok.status, 200);
   assert.equal(ok.cors, "https://deivaprakash56.github.io");
   assert.equal(ok.body.user.email, "priya@example.com");
-  assert.ok(ok.body.token.length > 30);
+  assert.equal(ok.body.user.name, "Priya");
   token = ok.body.token;
   assert.equal((await call("POST", "/auth/signup", { email: EMAIL, key })).status, 409);
+  assert.equal((await admin("GET", "users")).body.allow.some((a) => a.email === "priya@example.com"), true);
+});
+
+test("pre-approved emails get straight in; declined requests are removed", async () => {
+  assert.equal((await admin("POST", "allow", { emails: "ravi@example.com" })).status, 200);
+  assert.equal((await admin("POST", "allow", { emails: ["not-an-email"] })).status, 400);
+  const k = await loginKey("ravi@example.com", "ravi's password");
+  const r = await call("POST", "/auth/signup", { email: "ravi@example.com", key: k });
+  assert.equal(r.status, 200);
+  assert.ok(r.body.token.length > 30);
+  await call("POST", "/auth/signup", { email: "spam@example.com", key: await loginKey("spam@example.com", "whatever 123") });
+  assert.equal((await admin("POST", "delete", { email: "spam@example.com" })).status, 200);
+  assert.equal((await admin("GET", "users")).body.users.some((u) => u.email === "spam@example.com"), false);
 });
 
 test("sign in, session and wrong passwords", async () => {
@@ -86,12 +114,12 @@ test("each user has private data with conflict detection", async () => {
   assert.equal((await call("GET", "/me/data")).status, 401);
   // a second user can't see the first user's data
   const k2 = await loginKey("ravi@example.com", "ravi's password");
-  const ravi = await call("POST", "/auth/signup", { email: "ravi@example.com", key: k2 });
+  const ravi = await call("POST", "/auth/login", { email: "ravi@example.com", key: k2 });
   assert.equal((await call("GET", "/me/data", null, ravi.body.token)).body.rev, 0);
   const list = await admin("GET", "users");
   const p = list.body.users.find((u) => u.email === "priya@example.com");
   assert.ok(p.lastSync > 0 && p.bytes > 10);
-  assert.equal(list.body.allow.length, 3);
+  assert.equal(list.body.allow.length, 3); // priya (approved request), ravi, lock
   const exp = await admin("POST", "export", { email: "priya@example.com" });
   assert.equal(exp.body.data.reminders[0].title, "Call mom");
 });

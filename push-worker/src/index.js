@@ -1,7 +1,7 @@
 // Nudge companion server (Cloudflare Worker + Durable Objects, free plan friendly).
 //
 // Beta accounts (see accounts.js):
-//   POST /auth/signup  { email, key, name } -> { token, user }   (only emails on the approved list)
+//   POST /auth/signup  { email, key, name } -> { token, user } for approved emails, else 202 { pending } (access request)
 //   POST /auth/login   { email, key }       -> { token, user }
 //   POST /auth/logout · GET /auth/me · POST /auth/password { key, newKey } · POST /auth/reset { email, code, key }
 //   GET|PUT /me/data   the signed-in user's app data (same { rev, data } protocol as /sync)
@@ -110,7 +110,7 @@ async function accountsRoute(req, env, parts) {
   if (!env.ADMIN_TOKEN || !safeEqual(auth.replace(/^Bearer\s+/i, ""), env.ADMIN_TOKEN)) return json({ error: "Admin token required" }, 401);
   const body = req.method === "POST" ? await req.json().catch(() => ({})) : {};
   if (req.method === "GET" && action === "users") return toAccounts(env, "admin/users", "GET");
-  if (req.method === "POST" && ["allow", "unallow", "reset", "disable"].includes(action)) return toAccounts(env, `admin/${action}`, "POST", body);
+  if (req.method === "POST" && ["allow", "unallow", "approve", "reset", "disable"].includes(action)) return toAccounts(env, `admin/${action}`, "POST", body);
   if (req.method === "POST" && (action === "export" || action === "delete")) {
     const look = await toAccounts(env, "admin/lookup", "POST", { email: body.email });
     if (!look.ok) return look;

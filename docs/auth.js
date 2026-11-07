@@ -25,6 +25,6 @@ export async function authFetch(path, { method = "GET", body, token } = {}) {
   try { res = await fetch(apiBase() + path, { method, headers, body: body ? JSON.stringify(body) : undefined }); }
   catch { throw new Error("Can't reach the Nudge server. Check your internet connection."); }
   const j = await res.json().catch(() => ({}));
-  if (!res.ok && res.status !== 409) { const e = new Error(j.error || `Server error ${res.status}`); e.status = res.status; throw e; }
+  if (!res.ok && res.status !== 409) { const e = new Error(j.error || `Server error ${res.status}`); e.status = res.status; e.data = j; throw e; }
   return { status: res.status, ...j };
 }

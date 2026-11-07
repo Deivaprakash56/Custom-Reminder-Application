@@ -854,7 +854,7 @@ function accountSection() {
   return [h("h3", {}, "Account"),
     row(u.name || u.email, u.name ? u.email : "Signed in",
       h("button", { class: "btn ghost sm", onclick: () => syncNow(true) }, icon("cloud", 13), "Sync now"),
-      h("button", { class: "btn ghost sm", onclick: (e) => busy(e.target, signOut) }, "Sign out")),
+      h("button", { class: "btn ghost sm", onclick: (e) => { if (confirm(`Sign out of Nudge (${u.email})?`)) busy(e.target, signOut); } }, "Sign out")),
     h("p", { class: "muted small", id: "syncStatus" }, sync.status || "Your reminders, notes and lists sync to your account automatically. Attachments and custom sounds stay on each device."),
     row("Change password", null, cur, nw, nw2, h("button", { class: "btn primary sm", onclick: (e) => busy(e.target, async () => { await changeAccountPassword(cur.value, nw.value, nw2.value); toast("Password changed. Other devices will need to sign in again."); }) }, "Change"))];
 }

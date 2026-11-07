@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Start Task Reminder and open it in the browser.
+# Start Nudge and open it in the browser.
 #   ./run.sh            # this PC only (http://127.0.0.1:8765)
 #   ./run.sh --lan      # also from your phone on the same Wi-Fi (no password!)
 cd "$(dirname "$0")"

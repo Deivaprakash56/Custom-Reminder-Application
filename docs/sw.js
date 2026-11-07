@@ -1,5 +1,5 @@
 // Service worker: offline app shell + reminder notification clicks.
-const CACHE = "reminders-v3";
+const CACHE = "nudge-v4";
 const SHELL = ["./", "index.html", "app.js", "nlp.js", "extras.js", "style.css", "manifest.webmanifest",
   "icons/icon-192.png", "icons/icon-512.png", "icons/favicon.png"];
 

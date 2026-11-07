@@ -16,6 +16,7 @@ self.addEventListener("activate", (e) => {
 // Network first (so updates arrive), cache as the offline fallback.
 self.addEventListener("fetch", (e) => {
   if (e.request.method !== "GET" || new URL(e.request.url).origin !== location.origin) return;
+  if (e.request.headers.has("range") || new URL(e.request.url).pathname.includes("/media/")) return; // let video stream normally
   e.respondWith(fetch(e.request)
     .then((res) => {
       const copy = res.clone();

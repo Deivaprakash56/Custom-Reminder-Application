@@ -5,7 +5,15 @@ a calendar and a password-protected private folder. Open it on any phone or PC:
 
 **▶ https://deivaprakash56.github.io/Custom-Reminder-Application/**
 
-<!-- VIDEO -->
+### 🎬 How it evolved (2-minute video)
+
+[![Watch: how Reminders grew from a simple task list into a personal assistant](docs/media/evolution-poster.jpg)](https://deivaprakash56.github.io/Custom-Reminder-Application/docs/video.html)
+
+A narrated tour from the first task list (version 1) to the voice assistant, folders and private vault
+(version 2) and the calendar, habits, focus timer, insights, push, sync and Tamil support (version 3),
+all built from **Deivaprakash's** ideas.
+**[▶ Watch with sound](https://deivaprakash56.github.io/Custom-Reminder-Application/docs/video.html)** ·
+[download the MP4](docs/media/reminders-evolution.mp4) · [captions](docs/media/reminders-evolution.vtt)
 
 | Edition | Where | Data stored | Reminders |
 |---|---|---|---|

@@ -14,7 +14,8 @@ Python standard library and SQLite).
 
 `docs/` is a static, installable web app (PWA) with an offline cache and a home-screen icon.
 GitHub Pages serves it at `https://deivaprakash56.github.io/Custom-Reminder-Application/`
-(Settings → Pages → Branch `main`, folder `/docs`).
+(Settings → Pages → Branch `main`, folder `/docs`). If Pages is set to the root folder instead,
+the root `index.html` redirects to `docs/`, so the link still opens the app.
 
 - Open the link, then tap **Install app** (Chrome) or **Add to Home screen**, then
   **Enable notifications**.

@@ -1,4 +1,5 @@
-// Beta accounts: sign-up for approved emails, sign-in sessions and admin tools.
+// Beta accounts: sign-up (approved emails go straight in; anyone else becomes an access request
+// the admin approves or declines), sign-in sessions and admin tools.
 // One Durable Object ("global") holds all accounts; each user's app data lives in its own SyncRoom.
 //
 // Passwords never reach the server: the browser stretches them with PBKDF2 (200,000 rounds, salted
@@ -11,6 +12,7 @@ const SESSION_DAYS = 60;
 const MAX_FAILS = 6;
 const LOCK_MS = 15 * 60_000;
 const RESET_HOURS = 48;
+const MAX_PENDING = 300; // cap on open access requests (stops sign-up spam filling storage)
 
 const te = new TextEncoder();
 export const normEmail = (e) => String(e || "").trim().toLowerCase();
@@ -41,6 +43,7 @@ const publicUser = (u) => ({ id: u.id, email: u.email, name: u.name || "" });
 
 export class Accounts {
   constructor(state, env) { this.state = state; this.env = env; this.st = state.storage; }
+  get admin() { return String((this.env && this.env.ADMIN_NAME) || "the admin"); }
 
   async fetch(req) {
     const url = new URL(req.url);
@@ -58,6 +61,7 @@ export class Accounts {
         case "POST touch": return await this.touch(body);
         case "GET admin/users": return await this.adminList();
         case "POST admin/allow": return await this.adminAllow(body);
+        case "POST admin/approve": return await this.adminApprove(body);
         case "POST admin/unallow": return await this.adminUnallow(body);
         case "POST admin/reset": return await this.adminReset(body);
         case "POST admin/disable": return await this.adminDisable(body);
@@ -75,13 +79,20 @@ export class Accounts {
     email = normEmail(email);
     if (!EMAIL_RE.test(email)) return err("Enter a valid email address");
     if (!KEY_RE.test(String(key || ""))) return err("Invalid password data");
-    if (!(await this.st.get(`allow:${email}`))) return err("This email isn't approved for the beta yet. Ask the person who invited you to add it.", 403);
-    if (await this.st.get(`user:${email}`)) return err("An account with this email already exists. Sign in instead.", 409);
+    const existing = await this.st.get(`user:${email}`);
+    if (existing && existing.pending) return json({ pending: true, message: `You've already requested access. ${this.admin} hasn't approved it yet; you'll be able to sign in once they do.` }, 202);
+    if (existing) return err("An account with this email already exists. Sign in instead.", 409);
+    const approved = Boolean(await this.st.get(`allow:${email}`));
+    if (!approved && (await this.st.get("pendingCount")) >= MAX_PENDING) return err("Sign-ups are paused right now. Please try again later.", 429);
     const salt = rand(16);
     const user = { id: b64u(rand(15)), email, name: String(name || "").trim().slice(0, 60), salt: b64u(salt), hash: await hashKey(key, salt),
-      created: Date.now(), lastLogin: Date.now(), lastSync: 0, bytes: 0, disabled: false, fails: 0, lockUntil: 0 };
+      created: Date.now(), lastLogin: approved ? Date.now() : 0, lastSync: 0, bytes: 0, disabled: false, fails: 0, lockUntil: 0, pending: !approved };
     await this.st.put(`user:${email}`, user);
     await this.st.put(`uid:${user.id}`, email);
+    if (!approved) {
+      await this.st.put("pendingCount", ((await this.st.get("pendingCount")) || 0) + 1);
+      return json({ pending: true, message: `Access requested. ${this.admin} has been asked to approve your account. Once it's approved, sign in here with this email and password.` }, 202);
+    }
     return json({ token: await this.newSession(user), user: publicUser(user) });
   }
 
@@ -97,6 +108,7 @@ export class Accounts {
       await this.st.put(`user:${email}`, user);
       return err(generic, 401);
     }
+    if (user.pending) return json({ error: `Your access request is waiting for ${this.admin}'s approval. You'll be able to sign in once it's approved.`, pending: true }, 403);
     if (user.disabled) return err("This account is paused. Contact the person who invited you.", 403);
     user.fails = 0; user.lockUntil = 0; user.lastLogin = Date.now();
     await this.st.put(`user:${email}`, user);
@@ -117,7 +129,7 @@ export class Accounts {
     const s = await this.st.get(`sess:${h}`);
     if (!s || s.exp < Date.now()) { if (s) await this.dropSession(h, s.uid); return null; }
     const user = await this.st.get(`user:${s.email}`);
-    if (!user || user.disabled) return null;
+    if (!user || user.disabled || user.pending) return null;
     if (s.exp - Date.now() < (SESSION_DAYS / 2) * 86400_000) { s.exp = Date.now() + SESSION_DAYS * 86400_000; await this.st.put(`sess:${h}`, s); }
     return user;
   }
@@ -174,7 +186,7 @@ export class Accounts {
   // ---------------------------------------------------------------- admin (the worker checks ADMIN_TOKEN first)
   async adminList() {
     const users = [...(await this.st.list({ prefix: "user:" })).values()].map((u) => ({
-      email: u.email, name: u.name, created: u.created, lastLogin: u.lastLogin, lastSync: u.lastSync, bytes: u.bytes, disabled: u.disabled, id: u.id }));
+      email: u.email, name: u.name, created: u.created, lastLogin: u.lastLogin, lastSync: u.lastSync, bytes: u.bytes, disabled: u.disabled, pending: Boolean(u.pending), id: u.id }));
     const allow = [...(await this.st.list({ prefix: "allow:" })).entries()].map(([k, v]) => ({ email: k.slice(6), added: v.added, note: v.note || "" }));
     return json({ users: users.sort((a, b) => b.created - a.created), allow: allow.sort((a, b) => b.added - a.added) });
   }
@@ -182,8 +194,27 @@ export class Accounts {
     const list = (Array.isArray(emails) ? emails : String(emails || "").split(/[\s,;]+/)).map(normEmail).filter(Boolean);
     const bad = list.filter((e) => !EMAIL_RE.test(e));
     if (bad.length) return err(`Not valid: ${bad.join(", ")}`);
-    for (const e of list) if (!(await this.st.get(`allow:${e}`))) await this.st.put(`allow:${e}`, { added: Date.now(), note: String(note || "").slice(0, 80) });
+    for (const e of list) {
+      if (!(await this.st.get(`allow:${e}`))) await this.st.put(`allow:${e}`, { added: Date.now(), note: String(note || "").slice(0, 80) });
+      await this.activate(e);
+    }
     return json({ ok: true, added: list });
+  }
+  async activate(email) {
+    const user = await this.st.get(`user:${email}`);
+    if (!user || !user.pending) return false;
+    user.pending = false; user.approved = Date.now();
+    await this.st.put(`user:${email}`, user);
+    await this.st.put("pendingCount", Math.max(0, ((await this.st.get("pendingCount")) || 1) - 1));
+    return true;
+  }
+  async adminApprove({ email }) {
+    email = normEmail(email);
+    const user = await this.st.get(`user:${email}`);
+    if (!user) return err("No request from that email", 404);
+    if (!(await this.st.get(`allow:${email}`))) await this.st.put(`allow:${email}`, { added: Date.now(), note: "approved request" });
+    await this.activate(email);
+    return json({ ok: true, email });
   }
   async adminUnallow({ email }) { await this.st.delete(`allow:${normEmail(email)}`); return json({ ok: true }); }
   async adminReset({ email }) {
@@ -205,6 +236,7 @@ export class Accounts {
     const user = await this.st.get(`user:${email}`); if (!user) return err("No account with that email", 404);
     await this.dropAllSessions(user.id);
     await this.st.delete(`user:${email}`); await this.st.delete(`uid:${user.id}`); await this.st.delete(`reset:${email}`);
+    if (user.pending) await this.st.put("pendingCount", Math.max(0, ((await this.st.get("pendingCount")) || 1) - 1));
     return json({ ok: true, id: user.id });
   }
   async adminLookup({ email }) {

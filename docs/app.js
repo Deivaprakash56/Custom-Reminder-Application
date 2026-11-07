@@ -109,6 +109,7 @@ const ICONS = {
   home: '<path d="m3 9 9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><path d="M9 22V12h6v10"/>',
   cart: '<circle cx="8" cy="21" r="1"/><circle cx="19" cy="21" r="1"/><path d="M2.05 2.05h2l2.66 12.42a2 2 0 0 0 2 1.58h9.78a2 2 0 0 0 1.95-1.57l1.65-7.43H5.12"/>',
   book: '<path d="M4 19.5v-15A2.5 2.5 0 0 1 6.5 2H20v20H6.5a2.5 2.5 0 0 1 0-5H20"/>',
+  logout: '<path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><path d="m16 17 5-5-5-5M21 12H9"/>',
   keyboard: '<rect x="2" y="4" width="20" height="16" rx="2"/><path d="M6 8h.01M10 8h.01M14 8h.01M18 8h.01M8 12h.01M12 12h.01M16 12h.01M7 16h10"/>',
 };
 function icon(name, size = 18) {
@@ -2038,6 +2039,20 @@ $("#installBarBtn").addEventListener("click", doInstall);
 $("#installBarClose").addEventListener("click", () => { try { localStorage.setItem("nudge.installDismissed", String(Date.now())); } catch { /* ignore */ } updateInstallUi(); });
 $("#installClose").addEventListener("click", () => $("#installDialog").close());
 updateInstallUi();
+
+// ---------------------------------------------------------------- signed-in account (sidebar)
+if (SESSION) {
+  const u = SESSION.user;
+  $("#accountChip").hidden = false;
+  $("#accountAvatar").textContent = (u.name || u.email).trim().charAt(0).toUpperCase();
+  $("#accountName").textContent = u.name || u.email.split("@")[0];
+  $("#accountEmail").textContent = u.email;
+  $("#signOutBtn").addEventListener("click", async (e) => {
+    if (!confirm(`Sign out of Nudge (${u.email})? Your data stays in your account; this device's copy is removed.`)) return;
+    const b = e.currentTarget; b.disabled = true;
+    try { await signOut(); } finally { b.disabled = false; }
+  });
+}
 
 if ("serviceWorker" in navigator) {
   navigator.serviceWorker.register("sw.js").catch(() => { /* still works online */ });

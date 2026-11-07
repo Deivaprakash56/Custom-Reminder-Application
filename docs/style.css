@@ -710,3 +710,15 @@ a.btn.disabled { opacity: .5; pointer-events: none; }
 @media (min-width: 861px) { .install-bar { margin: 0 32px 12px; max-width: 760px; } }
 #installDialog > .sheet-head { padding: 18px 22px 6px; }
 #installDialog .install-steps { padding: 0 22px 20px; }
+
+/* ---------------------------------------------------------------- signed-in account (sidebar) */
+.account-chip { display: flex; align-items: center; gap: 10px; margin-top: 6px; padding: 10px; border-radius: 12px; background: var(--surface); border: 1px solid var(--line); }
+.account-chip[hidden] { display: none; }
+.account-chip .avatar { width: 34px; height: 34px; flex: none; border-radius: 50%; display: grid; place-items: center; color: #fff; font-weight: 700; font-size: 14px;
+  background: linear-gradient(135deg, var(--accent-2, #6366f1), var(--accent-deep, #4f46e5)); }
+.account-who { display: flex; flex-direction: column; min-width: 0; flex: 1; line-height: 1.25; }
+.account-who strong { font-size: 13.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.account-who span { font-size: 12px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.account-chip .btn { flex: none; }
+/* keep Settings / Install / account visible at the bottom of the scrolling sidebar */
+.side-foot { position: sticky; bottom: -14px; margin-bottom: -14px; padding-bottom: 14px; z-index: 2; background: linear-gradient(var(--sidebar), var(--sidebar)), var(--bg); }

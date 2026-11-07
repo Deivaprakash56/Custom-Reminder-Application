@@ -36,6 +36,8 @@
     th { color: var(--muted); font-weight: 600; font-size: 12px; text-transform: uppercase; letter-spacing: .04em; }
     td.actions { display: flex; gap: 6px; }
     .pill { display: inline-block; padding: 2px 9px; border-radius: 999px; font-size: 12px; font-weight: 600; background: var(--field); border: 1px solid var(--line); }
+    .requests { border-color: color-mix(in srgb, var(--accent) 40%, var(--line)); }
+    button.approve { background: var(--ok); border-color: var(--ok); color: #fff; }
     .pill.ok { color: var(--ok); } .pill.warn { color: var(--warn); } .pill.err { color: var(--err); }
     .msg { min-height: 20px; margin-top: 10px; }
     .msg.err { color: var(--err); } .msg.ok { color: var(--ok); }
@@ -46,7 +48,7 @@
 </head>
 <body>
   <main>
-    <header><img src="icons/icon-192.png" alt=""><div><h1>Nudge beta admin</h1><div class="muted">Approve testers, help with passwords, and manage accounts.</div></div></header>
+    <header><img src="icons/icon-192.png" alt=""><div><h1>Nudge beta admin</h1><div class="muted">Approve access requests and testers, help with passwords, and manage accounts.</div></div></header>
 
     <section class="card" id="connect">
       <h2>Connect</h2>
@@ -61,6 +63,13 @@
 
     <div id="panel" hidden>
       <div class="stats" id="stats"></div>
+
+      <section class="card requests">
+        <h2>Access requests <span class="pill warn" id="reqCount" hidden></span></h2>
+        <p class="muted" style="margin-top:-6px">People who signed up with an email that wasn't approved. Approve them and they can sign in right away with the password they chose.</p>
+        <div class="msg" id="rmsg"></div>
+        <div class="table"><table><thead><tr><th>Name</th><th>Email</th><th>Requested</th><th></th></tr></thead><tbody id="reqRows"></tbody></table></div>
+      </section>
 
       <section class="card">
         <h2>Approved emails</h2>
@@ -100,10 +109,20 @@
     }
 
     async function load() {
-      const { users, allow } = await call("GET", "users");
+      const all = await call("GET", "users");
+      const requests = all.users.filter((u) => u.pending);
+      const users = all.users.filter((u) => !u.pending);
+      const allow = all.allow;
+      $("#reqCount").hidden = !requests.length; $("#reqCount").textContent = `${requests.length} waiting`;
+      $("#reqRows").replaceChildren(...(requests.length ? requests.map((u) => h("tr", {},
+        h("td", {}, u.name || "—"), h("td", {}, u.email), h("td", {}, fmt(u.created)),
+        h("td", { class: "actions" },
+          h("button", { class: "sm approve", onclick: () => decide(() => call("POST", "approve", { email: u.email }), `Approved ${u.email}. They can sign in now.`) }, "Approve"),
+          h("button", { class: "sm danger", onclick: () => confirm(`Decline the request from ${u.email}?`) && decide(() => call("POST", "delete", { email: u.email }), `Declined ${u.email}.`) }, "Decline")))) : [h("tr", {}, h("td", { colspan: "4", class: "muted" }, "No requests waiting."))]));
       const byEmail = new Map(users.map((u) => [u.email, u]));
       const active = users.filter((u) => u.lastSync > Date.now() - 7 * 864e5).length;
       $("#stats").replaceChildren(
+        h("div", { class: "stat" }, h("b", {}, String(requests.length)), "access requests"),
         h("div", { class: "stat" }, h("b", {}, String(users.length)), "accounts"),
         h("div", { class: "stat" }, h("b", {}, String(allow.filter((a) => !byEmail.has(a.email)).length)), "invited, not signed up yet"),
         h("div", { class: "stat" }, h("b", {}, String(active)), "synced in the last 7 days"),
@@ -121,6 +140,9 @@
           h("button", { class: "sm", onclick: () => act(null, () => call("POST", "disable", { email: u.email, disabled: !u.disabled })) }, u.disabled ? "Resume" : "Pause"),
           h("button", { class: "sm", onclick: () => exportFor(u.email) }, "Export"),
           h("button", { class: "sm danger", onclick: () => act(`Delete ${u.email} and all of their data? This can't be undone.`, () => call("POST", "delete", { email: u.email })) }, "Delete")))) : [h("tr", {}, h("td", { colspan: "8", class: "muted" }, "No accounts yet."))]));
+    }
+    async function decide(fn, done) {
+      try { await fn(); await load(); msg($("#rmsg"), done, "ok"); } catch (e) { msg($("#rmsg"), e.message, "err"); }
     }
     async function act(question, fn) {
       if (question && !confirm(question)) return;

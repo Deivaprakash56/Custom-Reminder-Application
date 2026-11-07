@@ -39,6 +39,9 @@
     .row { display: flex; justify-content: flex-end; margin-top: 10px; }
     .msg { min-height: 20px; margin: 12px 0 0; font-size: 14px; color: var(--err); }
     .msg.ok { color: var(--ok); }
+    .msg.info { color: var(--text); background: color-mix(in srgb, var(--accent) 12%, transparent); border: 1px solid color-mix(in srgb, var(--accent) 35%, transparent);
+      border-radius: 12px; padding: 12px 14px; }
+    .msg.info b { display: block; margin-bottom: 2px; }
     .hint { color: var(--muted); font-size: 13px; margin: 8px 0 0; }
     .foot { text-align: center; color: var(--muted); font-size: 13px; margin-top: 18px; }
     [hidden] { display: none !important; }
@@ -68,7 +71,7 @@
         <input id="upName" name="name" autocomplete="name" maxlength="60">
         <label for="upEmail">Email</label>
         <input id="upEmail" name="email" type="email" autocomplete="username" required>
-        <p class="hint">Nudge is in private beta: use the email address you were invited with.</p>
+        <p class="hint" id="betaHint">Nudge is in private beta. If your email hasn't been invited yet, your sign-up is sent to the admin as an access request.</p>
         <label for="upPw">Password</label>
         <div class="field"><input id="upPw" name="password" type="password" autocomplete="new-password" minlength="8" required><button type="button" class="peek">Show</button></div>
         <label for="upPw2">Confirm password</label>
@@ -100,7 +103,13 @@
     else if (getSession()) next();                // already signed in
 
     const forms = { signin: $("#signin"), signup: $("#signup"), reset: $("#reset") };
-    const msg = (t, ok) => { $("#msg").textContent = t || ""; $("#msg").classList.toggle("ok", Boolean(ok)); };
+    const msg = (t, ok) => { const m = $("#msg"); m.textContent = t || ""; m.className = `msg${ok ? " ok" : ""}`; };
+    function info(title, text) {
+      const m = $("#msg"); m.className = "msg info"; m.replaceChildren();
+      const b = document.createElement("b"); b.textContent = title; m.append(b, text);
+    }
+    const adminName = (window.NUDGE_CONFIG || {}).adminName || "the admin";
+    $("#betaHint").textContent = `Nudge is in private beta. If your email hasn't been invited yet, ${adminName} gets an access request and you can sign in once it's approved.`;
     function show(name) {
       for (const [k, f] of Object.entries(forms)) f.hidden = k !== name;
       $("#tabIn").setAttribute("aria-selected", String(name === "signin"));
@@ -121,10 +130,20 @@
       btn.disabled = true; btn.textContent = "Please wait…"; msg("");
       try {
         const r = await fn();
+        if (r.pending) { // unknown email: an access request was sent to the admin
+          btn.disabled = false; btn.textContent = label;
+          const email = form.querySelector('input[type="email"]').value;
+          show("signin"); $("#inEmail").value = email;
+          info("Access requested", (r.message || "").replace(/^Access requested\.\s*/, "") || `${adminName} has been asked to approve your account. Once it's approved, sign in here with this email and password.`);
+          return;
+        }
         setSession({ token: r.token, user: r.user, api: apiBase() });
         msg("Signed in. Opening Nudge…", true);
         next();
-      } catch (e) { msg(e.message); btn.disabled = false; btn.textContent = label; }
+      } catch (e) {
+        btn.disabled = false; btn.textContent = label;
+        if (e.data && e.data.pending) info("Waiting for approval", e.message); else msg(e.message);
+      }
     }
     forms.signin.onsubmit = (e) => { e.preventDefault(); const email = $("#inEmail").value.trim();
       run(forms.signin, async () => authFetch("/auth/login", { method: "POST", body: { email, key: await loginKey(email, $("#inPw").value) } })); };

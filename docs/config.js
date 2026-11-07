@@ -4,4 +4,5 @@
 // (everything stays on each device, like before).
 window.NUDGE_CONFIG = {
   api: "https://reminders-push.reminders-push.workers.dev",
+  adminName: "Deivaprakash", // who approves access requests (shown on the sign-in page)
 };

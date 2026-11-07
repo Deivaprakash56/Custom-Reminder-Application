@@ -1,19 +1,20 @@
-# Reminders — Custom Reminder Application
+# Nudge — Remember everything. Effortlessly.
 
-A reminder app with a Siri-style voice assistant, to-dos, a task board, notes, habits, a focus timer,
-a calendar and a password-protected private folder. Open it on any phone or PC:
+**Nudge** is a personal assistant for your day: smart reminders with a Siri-style voice assistant, to-dos,
+a task board, notes, habits, a focus timer, a calendar and a password-protected private folder.
+Open it on any phone or PC:
 
 **▶ https://deivaprakash56.github.io/Custom-Reminder-Application/**
 
-### 🎬 How it evolved (2-minute video)
+### 🎬 Product demo (1.5 minutes)
 
-[![Watch: how Reminders grew from a simple task list into a personal assistant](docs/media/evolution-poster.jpg)](https://deivaprakash56.github.io/Custom-Reminder-Application/docs/video.html)
+[![Watch the Nudge product demo](docs/media/nudge-demo-poster.jpg)](https://deivaprakash56.github.io/Custom-Reminder-Application/docs/video.html)
 
-A narrated tour from the first task list (version 1) to the voice assistant, folders and private vault
-(version 2) and the calendar, habits, focus timer, insights, push, sync and Tamil support (version 3),
-all built from **Deivaprakash's** ideas.
-**[▶ Watch with sound](https://deivaprakash56.github.io/Custom-Reminder-Application/docs/video.html)** ·
-[download the MP4](docs/media/reminders-evolution.mp4) · [captions](docs/media/reminders-evolution.vtt)
+A quick tour of Nudge with music: the voice assistant, smart alerts and snooze, the calendar, the task
+board, habits, the focus timer, weekly insights, the private folder and the phone app, built from
+**Deivaprakash's** ideas.
+**[▶ Watch the demo](https://deivaprakash56.github.io/Custom-Reminder-Application/docs/video.html)** ·
+[download the MP4](docs/media/nudge-demo.mp4)
 
 | Edition | Where | Data stored | Reminders |
 |---|---|---|---|
@@ -78,7 +79,7 @@ Talk or type in plain English — or **Tamil** (Settings → Voice → தமி
 - Tamil: "நாளை மாலை 5 மணிக்கு அம்மாவை அழைக்க நினைவூட்டு", "பால் வாங்க பட்டியலில் சேர்", "நேரம் என்ன"
 
 If you leave out the time it asks "When should I remind you?" and keeps listening. Replies are spoken
-(turn off in Settings); hands-free "Hey Reminders" is in Settings. Speech needs Chrome, Edge or Safari;
+(turn off in Settings); hands-free "Hey Nudge" is in Settings. Speech needs Chrome, Edge or Safari;
 typing works everywhere. Optional **AI fallback**: when the built-in parser doesn't understand a
 sentence, it is sent to Claude (`claude-opus-5-5`) to work out what you meant — add your Anthropic API
 key in Settings → AI assistant, or keep the key on the companion server.
@@ -171,7 +172,7 @@ mkdir -p ~/.config/autostart
 cat > ~/.config/autostart/task-reminder.desktop <<EOD
 [Desktop Entry]
 Type=Application
-Name=Task Reminder
+Name=Nudge
 Exec=/usr/bin/python3 $HOME/Desktop/Claude/task_reminder/server.py
 X-GNOME-Autostart-enabled=true
 EOD

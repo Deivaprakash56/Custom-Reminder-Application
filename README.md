@@ -13,7 +13,7 @@ Python standard library and SQLite).
 ## Phone app (GitHub Pages)
 
 `docs/` is a static, installable web app (PWA) with an offline cache and a home-screen icon.
-GitHub Pages serves it at `https://<user>.github.io/task-reminder/`
+GitHub Pages serves it at `https://deivaprakash56.github.io/Custom-Reminder-Application/`
 (Settings → Pages → Branch `main`, folder `/docs`).
 
 - Open the link, then tap **Install app** (Chrome) or **Add to Home screen**, then

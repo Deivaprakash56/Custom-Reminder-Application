@@ -42,7 +42,7 @@ const DEV = "device_0123456789abcdef";
 test("health, vapid and CORS", async () => {
   const r = await call("GET", "/health");
   assert.equal(r.headers.get("Access-Control-Allow-Origin"), "https://deivaprakash56.github.io");
-  assert.deepEqual(await r.json(), { ok: true, push: true, ai: false });
+  assert.deepEqual(await r.json(), { ok: true, push: true, ai: false, accounts: false });
   assert.equal((await (await call("GET", "/vapid")).json()).publicKey, env.VAPID_PUBLIC);
   assert.equal((await call("GET", "/device/short/x")).status, 404);
 });

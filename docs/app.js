@@ -1,9 +1,13 @@
 "use strict";
+if (window.NUDGE_REDIRECTING) throw new Error("Opening the sign-in page");
 // Nudge - installable web app (GitHub Pages). Everything is stored on this device (localStorage).
 // Private-folder items are encrypted with AES-GCM using a key derived from your password (PBKDF2).
 // Voice commands use the browser's speech recognition; NLP (nlp.js) turns them into actions.
 
-const KEY = "reminders-pro.v2";
+// Signed-in users get their own local copy (so two accounts on one device never mix).
+const SESSION = window.NUDGE_SESSION || null;
+const ANON_KEY = "reminders-pro.v2";
+const KEY = SESSION ? `nudge.v2.u.${SESSION.user.id}` : ANON_KEY;
 const OLD_KEY = "task-reminder.v1";
 const CHECK_MS = 15000;
 const $ = (s, el = document) => el.querySelector(s);
@@ -164,7 +168,13 @@ function blankDb() {
 }
 function loadDb() {
   try {
-    const d = JSON.parse(localStorage.getItem(KEY));
+    let raw = localStorage.getItem(KEY);
+    // first sign-in on this device: bring along what was already saved here without an account
+    if (!raw && SESSION && !localStorage.getItem("nudge.anonClaimed")) {
+      raw = localStorage.getItem(ANON_KEY);
+      if (raw) { localStorage.setItem(KEY, raw); localStorage.setItem("nudge.anonClaimed", SESSION.user.id); }
+    }
+    const d = JSON.parse(raw);
     if (d && d.version === 2) {
       const b = blankDb();
       for (const k of ["reminders", "todos", "board", "notes", "history", "habits", "places", "focusLog"]) if (!Array.isArray(d[k])) d[k] = [];
@@ -1685,7 +1695,7 @@ function taWhen(due) {
 }
 // Should an unclear command go to the AI model? (only when the user turned it on)
 function aiWanted(p) {
-  if (!db.settings.ai || (!db.settings.aiKey && !db.settings.server)) return false;
+  if (!db.settings.ai || (!db.settings.aiKey && !serverUrl())) return false;
   return p.intent === "unknown" || (p.intent === "reminder" && !p.explicit && !p.due && !p.geo);
 }
 function remember(kind, item) { as.last = item ? { kind, id: item.id } : null; }
@@ -1983,9 +1993,51 @@ function updateNotifyBtn() { nb.hidden = !("Notification" in window) || Notifica
 nb.addEventListener("click", async () => { await Notification.requestPermission(); updateNotifyBtn(); chime(); });
 document.addEventListener("click", () => { if (audioCtx && audioCtx.state === "suspended") audioCtx.resume(); });
 
+// ---------------------------------------------------------------- install (home screen)
 let installPrompt = null;
-window.addEventListener("beforeinstallprompt", (e) => { e.preventDefault(); installPrompt = e; $("#installBtn").hidden = false; });
-$("#installBtn").addEventListener("click", async () => { if (!installPrompt) return; installPrompt.prompt(); await installPrompt.userChoice; installPrompt = null; $("#installBtn").hidden = true; });
+const isStandalone = () => window.matchMedia("(display-mode: standalone)").matches || navigator.standalone === true;
+const isIOS = () => /iphone|ipad|ipod/i.test(navigator.userAgent) || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
+const isPhone = () => window.matchMedia("(max-width: 860px), (pointer: coarse)").matches;
+function updateInstallUi() {
+  const can = !isStandalone();
+  $("#installBtn").hidden = !can;
+  let dismissed = 0; try { dismissed = Number(localStorage.getItem("nudge.installDismissed")) || 0; } catch { /* ignore */ }
+  $("#installBar").hidden = !can || Date.now() - dismissed < 7 * 864e5 || !(isPhone() || installPrompt);
+}
+function installHelp() {
+  const share = '<span class="ios-share" aria-label="Share"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8"/><path d="m16 6-4-4-4 4M12 2v13"/></svg></span>';
+  const ua = navigator.userAgent;
+  let html;
+  if (isIOS()) {
+    html = `<ol><li>Tap the <b>Share</b> button ${share} (at the bottom of Safari, or in the address bar).</li><li>Scroll down and tap <b>Add to Home Screen</b>.</li><li>Tap <b>Add</b>. Open Nudge from your home screen.</li></ol>
+      <p>Don't see “Add to Home Screen”? Open this page in <b>Safari</b> first. Notifications on iPhone need iOS 16.4 or later and work once Nudge is on your home screen.</p>`;
+  } else if (/SamsungBrowser/i.test(ua)) {
+    html = "<ol><li>Tap the menu <b>≡</b> at the bottom.</li><li>Tap <b>Add page to</b> → <b>Home screen</b> (or <b>Install</b>).</li></ol>";
+  } else if (/Android/i.test(ua)) {
+    html = `<ol><li>Tap the menu <b>⋮</b> at the top right of Chrome.</li><li>Tap <b>Install app</b> (or <b>Add to Home screen</b>).</li><li>Tap <b>Install</b>.</li></ol>
+      <p>Using another browser? Open this page in <b>Chrome</b> for the best experience.</p>`;
+  } else {
+    html = "<ol><li>In <b>Chrome</b> or <b>Edge</b>, click the install icon at the right end of the address bar.</li><li>Click <b>Install</b>.</li></ol><p>In Safari on a Mac: <b>File → Add to Dock</b>.</p>";
+  }
+  $("#installSteps").innerHTML = html;
+  $("#installDialog").showModal();
+}
+async function doInstall() {
+  if (installPrompt) {
+    installPrompt.prompt();
+    const { outcome } = await installPrompt.userChoice; installPrompt = null;
+    if (outcome === "accepted") toast("Nudge is being added to your home screen");
+    updateInstallUi(); return;
+  }
+  installHelp();
+}
+window.addEventListener("beforeinstallprompt", (e) => { e.preventDefault(); installPrompt = e; updateInstallUi(); });
+window.addEventListener("appinstalled", () => { installPrompt = null; updateInstallUi(); toast("Nudge installed"); });
+$("#installBtn").addEventListener("click", doInstall);
+$("#installBarBtn").addEventListener("click", doInstall);
+$("#installBarClose").addEventListener("click", () => { try { localStorage.setItem("nudge.installDismissed", String(Date.now())); } catch { /* ignore */ } updateInstallUi(); });
+$("#installClose").addEventListener("click", () => $("#installDialog").close());
+updateInstallUi();
 
 if ("serviceWorker" in navigator) {
   navigator.serviceWorker.register("sw.js").catch(() => { /* still works online */ });

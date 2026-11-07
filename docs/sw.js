@@ -1,6 +1,6 @@
 // Service worker: offline app shell + reminder notification clicks.
-const CACHE = "nudge-v4";
-const SHELL = ["./", "index.html", "app.js", "nlp.js", "extras.js", "style.css", "manifest.webmanifest",
+const CACHE = "nudge-v5";
+const SHELL = ["./", "index.html", "login.html", "config.js", "auth.js", "app.js", "nlp.js", "extras.js", "style.css", "manifest.webmanifest",
   "icons/icon-192.png", "icons/icon-512.png", "icons/favicon.png"];
 
 self.addEventListener("install", (e) => {

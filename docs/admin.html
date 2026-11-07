@@ -1,0 +1,155 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex, nofollow">
+  <title>Nudge Beta Admin</title>
+  <link rel="icon" type="image/png" href="icons/favicon.png">
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap">
+  <style>
+    :root { --bg: #f5f6fa; --card: #fff; --text: #151826; --muted: #646b80; --line: #e2e5ee; --accent: #4f46e5; --err: #dc2626; --ok: #059669; --warn: #b45309; --field: #f8f9fc; }
+    @media (prefers-color-scheme: dark) { :root { --bg: #0b0d13; --card: #141722; --text: #eef0f7; --muted: #9aa0b6; --line: #262b3b; --accent: #818cf8; --err: #f87171; --ok: #34d399; --warn: #fbbf24; --field: #0f121b; } }
+    * { box-sizing: border-box; }
+    body { margin: 0; background: var(--bg); color: var(--text); font: 14.5px/1.5 Inter, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; padding: 28px 16px 60px; }
+    main { width: min(1100px, 100%); margin: 0 auto; }
+    header { display: flex; align-items: center; gap: 12px; margin-bottom: 18px; }
+    header img { width: 40px; height: 40px; border-radius: 11px; }
+    h1 { font-size: 24px; margin: 0; letter-spacing: -.01em; }
+    h2 { font-size: 16px; margin: 0 0 12px; }
+    .muted { color: var(--muted); }
+    .card { background: var(--card); border: 1px solid var(--line); border-radius: 16px; padding: 18px; margin-bottom: 16px; }
+    .grid { display: grid; grid-template-columns: 1fr 1fr auto; gap: 10px; align-items: end; }
+    label { display: block; font-size: 12.5px; font-weight: 600; margin-bottom: 5px; }
+    input, textarea { width: 100%; font: inherit; color: var(--text); background: var(--field); border: 1px solid var(--line); border-radius: 10px; padding: 9px 12px; }
+    textarea { min-height: 70px; resize: vertical; }
+    button { font: inherit; font-weight: 600; border-radius: 10px; padding: 9px 14px; cursor: pointer; border: 1px solid var(--line); background: var(--card); color: var(--text); }
+    button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+    button.danger { color: var(--err); }
+    button.sm { padding: 5px 10px; font-size: 13px; }
+    .stats { display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 16px; }
+    .stat { background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 12px 16px; min-width: 150px; }
+    .stat b { display: block; font-size: 22px; }
+    .table { overflow-x: auto; }
+    table { width: 100%; border-collapse: collapse; font-size: 13.5px; }
+    th, td { text-align: left; padding: 9px 8px; border-bottom: 1px solid var(--line); white-space: nowrap; }
+    th { color: var(--muted); font-weight: 600; font-size: 12px; text-transform: uppercase; letter-spacing: .04em; }
+    td.actions { display: flex; gap: 6px; }
+    .pill { display: inline-block; padding: 2px 9px; border-radius: 999px; font-size: 12px; font-weight: 600; background: var(--field); border: 1px solid var(--line); }
+    .pill.ok { color: var(--ok); } .pill.warn { color: var(--warn); } .pill.err { color: var(--err); }
+    .msg { min-height: 20px; margin-top: 10px; }
+    .msg.err { color: var(--err); } .msg.ok { color: var(--ok); }
+    .code { font: 600 18px ui-monospace, SFMono-Regular, Menlo, monospace; letter-spacing: .08em; padding: 10px 14px; border-radius: 10px; background: var(--field); border: 1px dashed var(--line); display: inline-block; margin: 6px 0; }
+    [hidden] { display: none !important; }
+    @media (max-width: 700px) { .grid { grid-template-columns: 1fr; } }
+  </style>
+</head>
+<body>
+  <main>
+    <header><img src="icons/icon-192.png" alt=""><div><h1>Nudge beta admin</h1><div class="muted">Approve testers, help with passwords, and manage accounts.</div></div></header>
+
+    <section class="card" id="connect">
+      <h2>Connect</h2>
+      <div class="grid">
+        <div><label for="api">Server URL</label><input id="api" placeholder="https://reminders-push.you.workers.dev"></div>
+        <div><label for="token">Admin token</label><input id="token" type="password" autocomplete="off" placeholder="The ADMIN_TOKEN secret you set on the worker"></div>
+        <button class="primary" id="go">Connect</button>
+      </div>
+      <p class="muted" style="margin:10px 0 0">The token is kept only in this browser tab and is forgotten when you close it.</p>
+      <div class="msg" id="cmsg"></div>
+    </section>
+
+    <div id="panel" hidden>
+      <div class="stats" id="stats"></div>
+
+      <section class="card">
+        <h2>Approved emails</h2>
+        <p class="muted" style="margin-top:-6px">Only these addresses can create an account. Paste one or more, separated by commas or new lines.</p>
+        <div class="grid" style="grid-template-columns: 1fr auto">
+          <textarea id="emails" placeholder="friend@example.com, colleague@example.com"></textarea>
+          <button class="primary" id="addEmails">Approve</button>
+        </div>
+        <div class="msg" id="amsg"></div>
+        <div class="table"><table><thead><tr><th>Email</th><th>Status</th><th>Approved</th><th></th></tr></thead><tbody id="allowRows"></tbody></table></div>
+      </section>
+
+      <section class="card">
+        <h2>Accounts</h2>
+        <div class="msg" id="umsg"></div>
+        <div id="resetBox" hidden></div>
+        <div class="table"><table><thead><tr><th>Name</th><th>Email</th><th>Joined</th><th>Last sign-in</th><th>Last sync</th><th>Data</th><th>Status</th><th></th></tr></thead><tbody id="userRows"></tbody></table></div>
+      </section>
+    </div>
+  </main>
+  <script src="config.js"></script>
+  <script>
+    const $ = (s) => document.querySelector(s);
+    const h = (tag, props = {}, ...kids) => { const e = document.createElement(tag); for (const [k, v] of Object.entries(props)) { if (k.startsWith("on")) e.addEventListener(k.slice(2), v); else if (k === "class") e.className = v; else e.setAttribute(k, v); } e.append(...kids.flat().filter((x) => x != null)); return e; };
+    const fmt = (t) => (t ? new Date(t).toLocaleString(undefined, { day: "numeric", month: "short", hour: "numeric", minute: "2-digit" }) : "—");
+    const size = (b) => (!b ? "—" : b < 1024 ? `${b} B` : b < 1048576 ? `${(b / 1024).toFixed(1)} KB` : `${(b / 1048576).toFixed(2)} MB`);
+    const msg = (el, t, cls) => { el.textContent = t || ""; el.className = `msg ${cls || ""}`; };
+    $("#api").value = sessionStorage.getItem("nudge.admin.api") || (window.NUDGE_CONFIG || {}).api || "";
+    $("#token").value = sessionStorage.getItem("nudge.admin.token") || "";
+
+    async function call(method, path, body) {
+      const api = $("#api").value.trim().replace(/\/+$/, "");
+      const res = await fetch(`${api}/admin/${path}`, { method, headers: { Authorization: `Bearer ${$("#token").value.trim()}`, ...(body ? { "Content-Type": "application/json" } : {}) }, body: body ? JSON.stringify(body) : undefined });
+      const j = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(j.error || `Server error ${res.status}`);
+      return j;
+    }
+
+    async function load() {
+      const { users, allow } = await call("GET", "users");
+      const byEmail = new Map(users.map((u) => [u.email, u]));
+      const active = users.filter((u) => u.lastSync > Date.now() - 7 * 864e5).length;
+      $("#stats").replaceChildren(
+        h("div", { class: "stat" }, h("b", {}, String(users.length)), "accounts"),
+        h("div", { class: "stat" }, h("b", {}, String(allow.filter((a) => !byEmail.has(a.email)).length)), "invited, not signed up yet"),
+        h("div", { class: "stat" }, h("b", {}, String(active)), "synced in the last 7 days"),
+        h("div", { class: "stat" }, h("b", {}, size(users.reduce((n, u) => n + (u.bytes || 0), 0))), "total data"));
+      $("#allowRows").replaceChildren(...(allow.length ? allow.map((a) => h("tr", {},
+        h("td", {}, a.email),
+        h("td", {}, byEmail.has(a.email) ? h("span", { class: "pill ok" }, "Signed up") : h("span", { class: "pill warn" }, "Invited")),
+        h("td", {}, fmt(a.added)),
+        h("td", { class: "actions" }, h("button", { class: "sm danger", onclick: () => act(`Remove ${a.email} from the approved list? (An existing account keeps working.)`, () => call("POST", "unallow", { email: a.email })) }, "Remove")))) : [h("tr", {}, h("td", { colspan: "4", class: "muted" }, "No approved emails yet."))]));
+      $("#userRows").replaceChildren(...(users.length ? users.map((u) => h("tr", {},
+        h("td", {}, u.name || "—"), h("td", {}, u.email), h("td", {}, fmt(u.created)), h("td", {}, fmt(u.lastLogin)), h("td", {}, fmt(u.lastSync)), h("td", {}, size(u.bytes)),
+        h("td", {}, u.disabled ? h("span", { class: "pill err" }, "Paused") : h("span", { class: "pill ok" }, "Active")),
+        h("td", { class: "actions" },
+          h("button", { class: "sm", onclick: () => resetFor(u.email) }, "Reset password"),
+          h("button", { class: "sm", onclick: () => act(null, () => call("POST", "disable", { email: u.email, disabled: !u.disabled })) }, u.disabled ? "Resume" : "Pause"),
+          h("button", { class: "sm", onclick: () => exportFor(u.email) }, "Export"),
+          h("button", { class: "sm danger", onclick: () => act(`Delete ${u.email} and all of their data? This can't be undone.`, () => call("POST", "delete", { email: u.email })) }, "Delete")))) : [h("tr", {}, h("td", { colspan: "8", class: "muted" }, "No accounts yet."))]));
+    }
+    async function act(question, fn) {
+      if (question && !confirm(question)) return;
+      try { await fn(); await load(); msg($("#umsg"), ""); } catch (e) { msg($("#umsg"), e.message, "err"); }
+    }
+    async function resetFor(email) {
+      try {
+        const r = await call("POST", "reset", { email });
+        const box = $("#resetBox"); box.hidden = false;
+        box.replaceChildren(h("p", {}, `Send this one-time code to ${email}. On the sign-in page they tap “Forgot password?” and enter it with a new password. It expires ${fmt(r.expires)}.`), h("div", { class: "code" }, r.code));
+      } catch (e) { msg($("#umsg"), e.message, "err"); }
+    }
+    async function exportFor(email) {
+      try {
+        const r = await call("POST", "export", { email });
+        const a = h("a", { href: URL.createObjectURL(new Blob([JSON.stringify(r, null, 2)], { type: "application/json" })), download: `nudge-${email.replace(/[^a-z0-9]+/gi, "-")}.json` });
+        a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 2000);
+      } catch (e) { msg($("#umsg"), e.message, "err"); }
+    }
+    $("#go").onclick = async () => {
+      sessionStorage.setItem("nudge.admin.api", $("#api").value.trim()); sessionStorage.setItem("nudge.admin.token", $("#token").value.trim());
+      msg($("#cmsg"), "Connecting…");
+      try { await load(); $("#panel").hidden = false; msg($("#cmsg"), "Connected", "ok"); } catch (e) { $("#panel").hidden = true; msg($("#cmsg"), e.message, "err"); }
+    };
+    $("#addEmails").onclick = async () => {
+      try { const r = await call("POST", "allow", { emails: $("#emails").value }); $("#emails").value = ""; msg($("#amsg"), `Approved ${r.added.length} email${r.added.length === 1 ? "" : "s"}. Share the app link with them: they choose “Create account”.`, "ok"); await load(); }
+      catch (e) { msg($("#amsg"), e.message, "err"); }
+    };
+    if ($("#api").value && $("#token").value) $("#go").click();
+  </script>
+</body>
+</html>

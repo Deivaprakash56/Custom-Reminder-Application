@@ -1,6 +1,6 @@
 // Service worker: offline app shell + reminder notification clicks.
-const CACHE = "task-reminder-v1";
-const SHELL = ["./", "index.html", "app.js", "style.css", "manifest.webmanifest",
+const CACHE = "reminders-v2";
+const SHELL = ["./", "index.html", "app.js", "nlp.js", "style.css", "manifest.webmanifest",
   "icons/icon-192.png", "icons/icon-512.png", "icons/favicon.png"];
 
 self.addEventListener("install", (e) => {

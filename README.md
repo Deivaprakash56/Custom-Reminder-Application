@@ -17,13 +17,44 @@ GitHub Pages serves it at `https://deivaprakash56.github.io/Custom-Reminder-Appl
 (Settings → Pages → Branch `main`, folder `/docs`). If Pages is set to the root folder instead,
 the root `index.html` redirects to `docs/`, so the link still opens the app.
 
-- Open the link, then tap **Install app** (Chrome) or **Add to Home screen**, then
-  **Enable notifications**.
-- Tasks are saved only on that device. To move them, use **Export backup** on one device
-  and **Import backup** on the other.
-- Reminders are checked every 15 s while the app is open, and immediately when you switch
-  back to it, so missed reminders appear then. A static site has no server, so it can't
-  wake a closed app; if you need alerts with the app fully closed, use the PC edition.
+### What's inside
+
+- **Sidebar** with a live 12-hour clock (and a countdown to your next reminder), search across
+  everything, and smart lists: **Today, Scheduled, All, Overdue, Flagged, History**.
+- **Folders:** Personal, Work, **Private** (password-protected) and your own folders (pick a colour;
+  edit or delete from the ⋯ button).
+- **Private folder:** private reminders and notes are encrypted with AES-256-GCM using a key derived
+  from your password (PBKDF2-SHA-256, 310,000 rounds). It locks after 5 minutes. Private reminders
+  still go off while locked, shown as "Private reminder". There is no password recovery: "Forgot
+  password?" wipes the private items.
+- **Workspace:** a **To-Do List** (drag to reorder, double-click to edit, progress bar), **Things to
+  Do** (a To Do / In Progress / Done board with drag and drop), and a **Notepad** (autosave, pin,
+  search, word count).
+- **Voice assistant** (mic button or Ctrl+K): talk or type in plain English. Examples:
+  - "Remind me to call mom tomorrow at 5 pm", "in 20 minutes remind me to check the oven"
+  - "Remind me to take out the trash every weekday at 7:30 am", "… every Monday at 7"
+  - "Remind me to pay rent on the 1st at 10 #work", "set a work reminder to email John at 4"
+  - "… it's urgent", "… and remind me 30 minutes before"
+  - "Add eggs to my shopping list", "Add redesign the logo to things to do"
+  - "Take a note that the wifi password is …"
+  - "What's on tomorrow?", "What's overdue?", "What time is it?"
+  - "Mark call mom as done", "Delete the reminder about the dentist", "Snooze for 15 minutes", "Undo"
+  - "Open my work folder", "Open notepad", "Lock private folder"
+
+  If you leave out the time, it asks "When should I remind you?" and keeps listening. It answers out
+  loud (turn this off in Settings), and you can turn on hands-free "Hey Reminders" in Settings.
+  Voice input needs Chrome, Edge or Safari; typed commands work in every browser.
+- The add bar on every list understands the same language and shows a live preview of what it
+  understood.
+- Reminders show an in-page alert with Done / Snooze, play a chime, can read the reminder aloud, and
+  send a system notification if you allow it.
+- Undo for every change, an activity log, light and dark themes, a phone layout, and export/import
+  backups (Settings → Backup).
+
+Tasks from the first version of the app are moved into the Personal folder automatically.
+Data stays on that device. Reminders fire while the app is open or recently used; a static site has
+no server, so it can't wake a closed app. If you need alerts with the app fully closed, use the PC
+edition.
 
 ## PC server edition
 
@@ -94,19 +125,22 @@ Times are local and look like `2026-11-07T17:30`.
 ### Tests
 
 ```bash
-python3 -m unittest discover -s tests -v
+python3 -m unittest discover -s tests -v     # PC server
+node --test tests/test_nlp.js                # voice / natural-language parser (Node 18+)
 ```
 
 ## Files
 
 ```
-docs/              phone app for GitHub Pages: index.html, app.js (on-device storage +
-                   reminders), sw.js (offline + notification buttons), manifest, icons
+docs/              phone app for GitHub Pages: index.html, app.js (UI, storage, vault,
+                   reminders, assistant), nlp.js (natural-language parser), style.css,
+                   sw.js (offline + notification buttons), manifest, icons
 server.py          HTTP server, JSON API, SQLite store, reminder scheduler
 static/index.html  page
 static/app.js      UI logic, polling, in-page and browser notifications
 static/style.css   styles (light/dark, mobile)
-tests/test_app.py  API and reminder tests
+tests/test_app.py  API and reminder tests (PC server)
+tests/test_nlp.js  natural-language parser tests
 run.sh             start and open the browser
 data/tasks.db      your tasks (created on first run)
 ```

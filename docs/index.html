@@ -2,130 +2,130 @@
 <html lang="en">
 <head>
   <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Task Reminder</title>
-  <meta name="description" content="Tasks with due times and reminders. Works offline; your tasks stay on this device.">
-  <meta name="theme-color" content="#3b6ef5">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Reminders</title>
+  <meta name="description" content="Reminders, to-dos, a task board and notes with a voice assistant. Works offline; your data stays on this device.">
+  <meta name="theme-color" content="#4f46e5">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-title" content="Reminders">
   <link rel="manifest" href="manifest.webmanifest">
   <link rel="icon" type="image/png" href="icons/favicon.png">
   <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap">
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
-  <header class="top">
-    <div class="brand">
-      <span class="logo" aria-hidden="true">⏰</span>
-      <div>
-        <h1>Task Reminder</h1>
-        <p id="summary" class="muted">Loading…</p>
+  <div class="app">
+    <!-- ============================================================ sidebar -->
+    <aside id="sidebar" class="sidebar" aria-label="Navigation">
+      <div class="side-head">
+        <div class="brand">
+          <img src="icons/icon-192.png" alt="" class="brand-logo">
+          <div>
+            <div class="brand-name">Reminders</div>
+            <div class="brand-sub">Plan · Remember · Do</div>
+          </div>
+        </div>
+        <button class="icon-btn only-mobile" id="sideClose" aria-label="Close menu" data-icon="x"></button>
       </div>
-    </div>
-    <div class="head-tools">
-      <button id="installBtn" class="ghost" hidden>Install app</button>
-      <button id="notifyBtn" class="ghost" hidden>Enable notifications</button>
-    </div>
-  </header>
 
-  <main>
-    <section class="card add">
-      <form id="addForm" autocomplete="off">
-        <div class="row">
-          <input id="title" name="title" placeholder="What do you need to remember?" required maxlength="200">
-          <button type="submit" class="primary">Add task</button>
+      <section class="clock-card" aria-label="Current time">
+        <div class="clock-time" aria-live="off">
+          <span id="clkHM">--:--</span><span id="clkS" class="clock-sec">:--</span><span id="clkAP" class="clock-ap">--</span>
         </div>
-        <div class="quick" aria-label="Quick due times">
-          <span class="muted">Due:</span>
-          <button type="button" data-quick="10m">in 10 min</button>
-          <button type="button" data-quick="1h">in 1 hour</button>
-          <button type="button" data-quick="tonight">tonight 8 PM</button>
-          <button type="button" data-quick="tomorrow">tomorrow 9 AM</button>
-          <button type="button" data-quick="clear">no date</button>
+        <div id="clkDate" class="clock-date"></div>
+        <div id="clkNext" class="clock-next"></div>
+      </section>
+
+      <label class="side-search">
+        <span data-icon="search"></span>
+        <input id="search" type="search" placeholder="Search everything" aria-label="Search everything" autocomplete="off">
+        <kbd>Ctrl K</kbd>
+      </label>
+
+      <nav id="nav" class="nav"></nav>
+
+      <div class="side-foot">
+        <button class="side-link" id="settingsBtn"><span data-icon="settings"></span>Settings</button>
+        <button class="side-link" id="installBtn" hidden><span data-icon="download"></span>Install app</button>
+      </div>
+    </aside>
+    <div id="scrim" class="scrim" hidden></div>
+
+    <!-- ============================================================ main -->
+    <main class="main">
+      <header class="topbar">
+        <button class="icon-btn only-mobile" id="menuBtn" aria-label="Open menu" data-icon="menu"></button>
+        <div class="view-head">
+          <div id="viewIcon" class="view-icon"></div>
+          <div>
+            <h1 id="viewTitle">Today</h1>
+            <p id="viewSub" class="muted"></p>
+          </div>
         </div>
-        <div class="grid">
-          <label>Due date &amp; time <input type="datetime-local" name="due"></label>
-          <label>Remind me
-            <select name="remind_before">
-              <option value="0">at due time</option>
-              <option value="5">5 min before</option>
-              <option value="10">10 min before</option>
-              <option value="15">15 min before</option>
-              <option value="30">30 min before</option>
-              <option value="60">1 hour before</option>
-              <option value="1440">1 day before</option>
-            </select>
-          </label>
-          <label>Priority
-            <select name="priority">
-              <option value="normal">Normal</option>
-              <option value="high">High</option>
-              <option value="low">Low</option>
-            </select>
-          </label>
-          <label>Repeat
-            <select name="repeat">
-              <option value="none">Never</option>
-              <option value="daily">Every day</option>
-              <option value="weekdays">Weekdays</option>
-              <option value="weekly">Every week</option>
-              <option value="monthly">Every month</option>
-            </select>
-          </label>
+        <div class="top-actions">
+          <button class="btn ghost hide-sm" id="notifyBtn" hidden><span data-icon="bell"></span>Enable notifications</button>
+          <button class="btn primary" id="newBtn"><span data-icon="plus"></span><span class="hide-sm">New reminder</span></button>
+          <button class="mic-btn" id="micBtn" aria-label="Voice assistant" title="Voice assistant (Ctrl+K)"><span class="mic-orb"></span><span data-icon="mic"></span></button>
         </div>
-        <textarea name="notes" rows="2" placeholder="Notes (optional)" maxlength="2000"></textarea>
-        <p id="formError" class="error" role="alert"></p>
+      </header>
+      <div id="mClock" class="m-clock" aria-hidden="true"></div>
+      <div id="view" class="view" aria-live="polite"></div>
+    </main>
+  </div>
+
+  <!-- ============================================================ voice assistant -->
+  <div id="assistant" class="assistant" hidden role="dialog" aria-modal="true" aria-label="Voice assistant">
+    <div class="as-glow" aria-hidden="true"></div>
+    <div class="as-panel">
+      <div class="as-top">
+        <div class="as-title"><span data-icon="sparkles"></span>Assistant</div>
+        <div class="as-top-actions">
+          <button class="icon-btn" id="asSpeak" title="Spoken replies" aria-label="Toggle spoken replies" data-icon="volume"></button>
+          <button class="icon-btn" id="asClose" aria-label="Close assistant" data-icon="x"></button>
+        </div>
+      </div>
+      <div id="asLog" class="as-log" aria-live="polite"></div>
+      <div id="asLive" class="as-live"></div>
+      <div class="as-center">
+        <button id="asOrb" class="orb" aria-label="Tap to speak"><span class="orb-core"></span></button>
+        <div id="asHint" class="as-hint">Tap the orb and speak</div>
+      </div>
+      <div id="asChips" class="as-chips"></div>
+      <form id="asForm" class="as-form" autocomplete="off">
+        <input id="asInput" placeholder="Or type: “Remind me to call mom tomorrow at 6 pm”" aria-label="Type a command">
+        <button class="btn primary" aria-label="Send" data-icon="send"></button>
       </form>
-    </section>
+    </div>
+  </div>
 
-    <nav class="filters" aria-label="Filter tasks">
-      <button data-filter="active" class="on">Active</button>
-      <button data-filter="today">Today</button>
-      <button data-filter="overdue">Overdue</button>
-      <button data-filter="upcoming">Upcoming</button>
-      <button data-filter="done">Completed</button>
-      <button data-filter="all">All</button>
-      <input id="search" type="search" placeholder="Search…" aria-label="Search tasks">
-    </nav>
-
-    <section id="list" aria-live="polite"></section>
-
-    <footer class="foot">
-      <p class="muted">Your tasks are saved only on this device, in this browser.
-        Keep the app open (or in recent apps) to get reminders.</p>
-      <div class="tools">
-        <button id="exportBtn" class="ghost">Export backup</button>
-        <button id="importBtn" class="ghost">Import backup</button>
-        <input id="importFile" type="file" accept="application/json,.json" hidden>
-      </div>
-    </footer>
-  </main>
-
-  <!-- in-page reminder pop-up (always works, even without notification permission) -->
   <div id="alerts" class="alerts" aria-live="assertive"></div>
+  <div id="toast" class="toast" role="status" hidden></div>
 
-  <dialog id="editDialog">
+  <!-- ============================================================ reminder editor -->
+  <dialog id="editDialog" class="sheet">
     <form id="editForm" method="dialog">
-      <h2>Edit task</h2>
-      <label>Title <input name="title" required maxlength="200"></label>
-      <div class="grid">
-        <label>Due date &amp; time <input type="datetime-local" name="due"></label>
+      <div class="sheet-head">
+        <h2 id="editTitle">New reminder</h2>
+        <button class="icon-btn" value="cancel" formnovalidate aria-label="Close" data-icon="x"></button>
+      </div>
+      <input name="title" class="big-input" placeholder="Title" required maxlength="200" aria-label="Title">
+      <textarea name="notes" rows="2" placeholder="Notes" maxlength="4000" aria-label="Notes"></textarea>
+      <div class="form-grid">
+        <label>Date <input type="date" name="date"></label>
+        <label>Time <input type="time" name="time"></label>
         <label>Remind me
           <select name="remind_before">
-            <option value="0">at due time</option>
-            <option value="5">5 min before</option>
-            <option value="10">10 min before</option>
-            <option value="15">15 min before</option>
-            <option value="30">30 min before</option>
+            <option value="0">At time of event</option>
+            <option value="5">5 minutes before</option>
+            <option value="10">10 minutes before</option>
+            <option value="15">15 minutes before</option>
+            <option value="30">30 minutes before</option>
             <option value="60">1 hour before</option>
+            <option value="120">2 hours before</option>
             <option value="1440">1 day before</option>
-          </select>
-        </label>
-        <label>Priority
-          <select name="priority">
-            <option value="normal">Normal</option>
-            <option value="high">High</option>
-            <option value="low">Low</option>
           </select>
         </label>
         <label>Repeat
@@ -135,18 +135,86 @@
             <option value="weekdays">Weekdays</option>
             <option value="weekly">Every week</option>
             <option value="monthly">Every month</option>
+            <option value="yearly">Every year</option>
           </select>
         </label>
+        <label>Priority
+          <select name="priority">
+            <option value="normal">None</option>
+            <option value="low">Low</option>
+            <option value="high">High (flagged)</option>
+          </select>
+        </label>
+        <label>Folder <select name="folder" id="editFolder"></select></label>
       </div>
-      <label>Notes <textarea name="notes" rows="3" maxlength="2000"></textarea></label>
+      <div class="quick-dates" id="quickDates">
+        <button type="button" data-q="30m">In 30 min</button>
+        <button type="button" data-q="1h">In 1 hour</button>
+        <button type="button" data-q="tonight">Tonight</button>
+        <button type="button" data-q="tomorrow">Tomorrow 9 AM</button>
+        <button type="button" data-q="weekend">Weekend</button>
+        <button type="button" data-q="clear">No date</button>
+      </div>
       <p id="editError" class="error" role="alert"></p>
-      <div class="actions">
-        <button value="cancel" formnovalidate class="ghost">Cancel</button>
-        <button value="save" class="primary">Save</button>
+      <div class="sheet-actions">
+        <button type="button" class="btn danger-ghost" id="editDelete" hidden><span data-icon="trash"></span>Delete</button>
+        <span class="spacer"></span>
+        <button class="btn ghost" value="cancel" formnovalidate>Cancel</button>
+        <button class="btn primary" value="save">Save</button>
       </div>
     </form>
   </dialog>
 
+  <!-- ============================================================ private vault -->
+  <dialog id="vaultDialog" class="sheet narrow">
+    <form id="vaultForm" method="dialog" autocomplete="off">
+      <div class="vault-lock" data-icon="lock" data-size="34"></div>
+      <h2 id="vaultTitle">Private folder</h2>
+      <p id="vaultText" class="muted"></p>
+      <input type="text" name="username" autocomplete="username" value="reminders-private" hidden>
+      <input type="password" name="current" placeholder="Current password" autocomplete="current-password" aria-label="Current password">
+      <input type="password" name="pw" placeholder="Password" autocomplete="new-password" aria-label="Password">
+      <input type="password" name="pw2" placeholder="Confirm password" autocomplete="new-password" aria-label="Confirm password">
+      <p id="vaultError" class="error" role="alert"></p>
+      <div class="sheet-actions">
+        <button type="button" class="btn danger-ghost" id="vaultReset" hidden>Forgot password?</button>
+        <span class="spacer"></span>
+        <button class="btn ghost" value="cancel" formnovalidate>Cancel</button>
+        <button class="btn primary" value="ok" id="vaultOk">Unlock</button>
+      </div>
+    </form>
+  </dialog>
+
+  <!-- ============================================================ folder -->
+  <dialog id="folderDialog" class="sheet narrow">
+    <form id="folderForm" method="dialog" autocomplete="off">
+      <div class="sheet-head">
+        <h2 id="folderTitle">New folder</h2>
+        <button class="icon-btn" value="cancel" formnovalidate aria-label="Close" data-icon="x"></button>
+      </div>
+      <input name="name" class="big-input" placeholder="Folder name" required maxlength="40" aria-label="Folder name">
+      <div class="swatches" id="swatches" role="radiogroup" aria-label="Colour"></div>
+      <p id="folderError" class="error" role="alert"></p>
+      <div class="sheet-actions">
+        <button type="button" class="btn danger-ghost" id="folderDelete" hidden><span data-icon="trash"></span>Delete folder</button>
+        <span class="spacer"></span>
+        <button class="btn ghost" value="cancel" formnovalidate>Cancel</button>
+        <button class="btn primary" value="save">Save</button>
+      </div>
+    </form>
+  </dialog>
+
+  <!-- ============================================================ settings -->
+  <dialog id="settingsDialog" class="sheet">
+    <div class="sheet-head">
+      <h2>Settings</h2>
+      <button class="icon-btn" id="settingsClose" aria-label="Close" data-icon="x"></button>
+    </div>
+    <div id="settingsBody" class="settings"></div>
+  </dialog>
+
+  <input id="importFile" type="file" accept="application/json,.json" hidden>
+  <script src="nlp.js"></script>
   <script src="app.js"></script>
 </body>
 </html>

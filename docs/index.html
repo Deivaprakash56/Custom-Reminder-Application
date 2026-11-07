@@ -8,6 +8,16 @@
   <meta name="theme-color" content="#4f46e5">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-title" content="Nudge">
+  <script src="config.js"></script>
+  <script>
+    // Accounts: when a server is configured, Nudge needs a signed-in session.
+    (function () {
+      var api = String((window.NUDGE_CONFIG || {}).api || "").trim(); var s = null;
+      try { s = JSON.parse(localStorage.getItem("nudge.session")); } catch (e) { /* none */ }
+      if (api && !(s && s.token && s.user)) { window.NUDGE_REDIRECTING = true; location.replace("login.html" + location.search); }
+      window.NUDGE_SESSION = api && s && s.token && s.user ? s : null;
+    })();
+  </script>
   <link rel="manifest" href="manifest.webmanifest">
   <link rel="icon" type="image/png" href="icons/favicon.png">
   <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
@@ -72,6 +82,12 @@
         </div>
       </header>
       <div id="mClock" class="m-clock" aria-hidden="true"></div>
+      <div id="installBar" class="install-bar" hidden>
+        <img src="icons/icon-192.png" alt="">
+        <div class="install-text"><strong>Install Nudge</strong><span>Add it to your home screen for alerts and offline use.</span></div>
+        <button class="btn primary sm" id="installBarBtn">Install</button>
+        <button class="icon-btn sm" id="installBarClose" aria-label="Not now" data-icon="x"></button>
+      </div>
       <div id="view" class="view" aria-live="polite"></div>
     </main>
   </div>
@@ -232,6 +248,15 @@
       <button class="icon-btn" id="settingsClose" aria-label="Close" data-icon="x"></button>
     </div>
     <div id="settingsBody" class="settings"></div>
+  </dialog>
+
+  <!-- ============================================================ install help -->
+  <dialog id="installDialog" class="sheet narrow">
+    <div class="sheet-head">
+      <h2>Install Nudge</h2>
+      <button class="icon-btn" id="installClose" aria-label="Close" data-icon="x"></button>
+    </div>
+    <div id="installSteps" class="install-steps"></div>
   </dialog>
 
   <input id="importFile" type="file" accept="application/json,.json" hidden>

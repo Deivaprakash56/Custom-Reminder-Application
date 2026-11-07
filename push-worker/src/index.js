@@ -1,4 +1,11 @@
-// Reminders companion server (Cloudflare Worker + Durable Objects, free plan friendly).
+// Nudge companion server (Cloudflare Worker + Durable Objects, free plan friendly).
+//
+// Beta accounts (see accounts.js):
+//   POST /auth/signup  { email, key, name } -> { token, user }   (only emails on the approved list)
+//   POST /auth/login   { email, key }       -> { token, user }
+//   POST /auth/logout · GET /auth/me · POST /auth/password { key, newKey } · POST /auth/reset { email, code, key }
+//   GET|PUT /me/data   the signed-in user's app data (same { rev, data } protocol as /sync)
+//   /admin/*           Authorization: Bearer <ADMIN_TOKEN>: users, approved emails, reset codes, export, delete
 //
 //   GET  /health                      -> { ok, push, ai }
 //   GET  /vapid                       -> { publicKey }
@@ -13,6 +20,9 @@
 // Each device is a Durable Object that sets an alarm for its next reminder, so nothing polls.
 
 import { sendPush } from "./webpush.js";
+import { Accounts, safeEqual } from "./accounts.js";
+
+export { Accounts };
 
 const ID_RE = /^[A-Za-z0-9_-]{16,128}$/;
 const MAX_ITEMS = 300;
@@ -27,7 +37,7 @@ function cors(req, env) {
   return {
     "Access-Control-Allow-Origin": ok ? origin || "*" : allowed[0],
     "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
-    "Access-Control-Allow-Headers": "Content-Type",
+    "Access-Control-Allow-Headers": "Content-Type, Authorization",
     "Access-Control-Max-Age": "86400",
     Vary: "Origin",
   };
@@ -41,7 +51,7 @@ export default {
     const url = new URL(req.url);
     const parts = url.pathname.split("/").filter(Boolean);
     try {
-      if (parts[0] === "health") return json({ ok: true, push: Boolean(env.VAPID_PUBLIC && env.VAPID_PRIVATE_JWK), ai: Boolean(env.ANTHROPIC_API_KEY) }, 200, h);
+      if (parts[0] === "health") return json({ ok: true, push: Boolean(env.VAPID_PUBLIC && env.VAPID_PRIVATE_JWK), ai: Boolean(env.ANTHROPIC_API_KEY), accounts: Boolean(env.ACCOUNTS) }, 200, h);
       if (parts[0] === "vapid") {
         if (!env.VAPID_PUBLIC) return json({ error: "VAPID keys are not configured" }, 501, h);
         return json({ publicKey: env.VAPID_PUBLIC }, 200, h);
@@ -57,12 +67,63 @@ export default {
         return new Response(res.body, { status: res.status, headers: { ...Object.fromEntries(res.headers), ...h } });
       }
       if (parts[0] === "ai" && req.method === "POST") return await aiProxy(req, env, h);
+      if (parts[0] === "auth" || parts[0] === "me" || parts[0] === "admin") {
+        if (!env.ACCOUNTS) return json({ error: "Accounts are not set up on this server" }, 501, h);
+        return withCors(await accountsRoute(req, env, parts), h);
+      }
       return json({ error: "not found" }, 404, h);
     } catch (e) {
       return json({ error: String(e && e.message || e) }, 500, h);
     }
   },
 };
+
+// ---------------------------------------------------------------- accounts
+function withCors(res, h) { return new Response(res.body, { status: res.status, headers: { ...Object.fromEntries(res.headers), ...h } }); }
+const accountsStub = (env) => env.ACCOUNTS.get(env.ACCOUNTS.idFromName("global"));
+const toAccounts = (env, path, method, body, auth) => accountsStub(env).fetch(new Request(`https://do/${path}`, {
+  method, body: body == null ? null : typeof body === "string" ? body : JSON.stringify(body), headers: { "Content-Type": "application/json", ...(auth ? { Authorization: auth } : {}) } }));
+const userRoom = (env, uid) => env.SYNC.get(env.SYNC.idFromName(`user:${uid}`));
+
+async function accountsRoute(req, env, parts) {
+  const auth = req.headers.get("Authorization") || "";
+  const [area, action, arg] = parts;
+  if (area === "auth") {
+    const map = { "POST signup": "signup", "POST login": "login", "POST logout": "logout", "GET me": "session", "POST password": "password", "POST reset": "reset" };
+    const target = map[`${req.method} ${action}`];
+    if (!target) return json({ error: "not found" }, 404);
+    const body = req.method === "POST" ? await req.text() : null;
+    if (body && body.length > 4000) return json({ error: "too large" }, 413);
+    return toAccounts(env, target, req.method, body, auth);
+  }
+  if (area === "me" && action === "data") {
+    const who = await toAccounts(env, "session", "GET", null, auth);
+    if (!who.ok) return who;
+    const { user } = await who.json();
+    const body = req.method === "PUT" ? await req.text() : null;
+    if (body && body.length > MAX_SYNC_BYTES) return json({ error: "Your data is too large to sync (limit about 1.8 MB)" }, 413);
+    const res = await userRoom(env, user.id).fetch(new Request("https://do/", { method: req.method === "PUT" ? "PUT" : "GET", body, headers: { "Content-Type": "application/json" } }));
+    if (req.method === "PUT" && res.ok) await toAccounts(env, "touch", "POST", { uid: user.id, bytes: body.length });
+    return res;
+  }
+  // admin
+  if (!env.ADMIN_TOKEN || !safeEqual(auth.replace(/^Bearer\s+/i, ""), env.ADMIN_TOKEN)) return json({ error: "Admin token required" }, 401);
+  const body = req.method === "POST" ? await req.json().catch(() => ({})) : {};
+  if (req.method === "GET" && action === "users") return toAccounts(env, "admin/users", "GET");
+  if (req.method === "POST" && ["allow", "unallow", "reset", "disable"].includes(action)) return toAccounts(env, `admin/${action}`, "POST", body);
+  if (req.method === "POST" && (action === "export" || action === "delete")) {
+    const look = await toAccounts(env, "admin/lookup", "POST", { email: body.email });
+    if (!look.ok) return look;
+    const { id } = await look.json();
+    if (action === "export") {
+      const doc = await (await userRoom(env, id).fetch(new Request("https://do/"))).json();
+      return json({ email: body.email, rev: doc.rev, updated: doc.updated, data: doc.data ? JSON.parse(doc.data) : null });
+    }
+    await userRoom(env, id).fetch(new Request("https://do/", { method: "DELETE" }));
+    return toAccounts(env, "admin/delete", "POST", { email: body.email });
+  }
+  return json({ error: "not found" }, 404);
+}
 
 // ---------------------------------------------------------------- AI proxy (keeps the API key on the server)
 async function aiProxy(req, env, h) {

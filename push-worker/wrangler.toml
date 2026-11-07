@@ -1,4 +1,4 @@
-name = "reminders-push"
+name = "reminders-push"  # keep the name so existing push/sync URLs keep working
 main = "src/index.js"
 compatibility_date = "2025-09-01"
 
@@ -16,12 +16,21 @@ class_name = "Device"
 name = "SYNC"
 class_name = "SyncRoom"
 
+[[durable_objects.bindings]]
+name = "ACCOUNTS"
+class_name = "Accounts"
+
 # SQLite-backed Durable Objects are available on the Workers free plan
 [[migrations]]
 tag = "v1"
 new_sqlite_classes = ["Device", "SyncRoom"]
 
+[[migrations]]
+tag = "v2"
+new_sqlite_classes = ["Accounts"]
+
 # Secrets (set with `npx wrangler secret put NAME`):
 #   VAPID_PUBLIC        base64url public key printed by gen-vapid.mjs
 #   VAPID_PRIVATE_JWK   JSON private key printed by gen-vapid.mjs
+#   ADMIN_TOKEN         long random string; unlocks docs/admin.html (approve emails, reset passwords)
 #   ANTHROPIC_API_KEY   optional, enables the AI fallback without storing a key in the browser

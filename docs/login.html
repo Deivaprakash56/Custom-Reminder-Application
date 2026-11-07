@@ -1,0 +1,140 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Sign in · Nudge</title>
+  <meta name="description" content="Sign in to Nudge, or create your beta account.">
+  <meta name="theme-color" content="#4f46e5">
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="icon" type="image/png" href="icons/favicon.png">
+  <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap">
+  <style>
+    :root { --bg: #f5f6fa; --card: #ffffff; --text: #151826; --muted: #646b80; --line: #e2e5ee; --accent: #4f46e5; --accent-2: #6366f1; --err: #dc2626; --ok: #059669; --field: #f8f9fc; }
+    @media (prefers-color-scheme: dark) { :root { --bg: #0b0d13; --card: #141722; --text: #eef0f7; --muted: #9aa0b6; --line: #262b3b; --accent: #818cf8; --accent-2: #6366f1; --err: #f87171; --ok: #34d399; --field: #0f121b; } }
+    * { box-sizing: border-box; }
+    body { margin: 0; min-height: 100vh; min-height: 100dvh; display: grid; place-items: center; padding: 24px 16px; color: var(--text);
+      font: 15px/1.5 Inter, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+      background: radial-gradient(900px 520px at 0% 0%, color-mix(in srgb, var(--accent) 22%, transparent), transparent 60%),
+                  radial-gradient(700px 480px at 100% 100%, color-mix(in srgb, #db2777 14%, transparent), transparent 60%), var(--bg); }
+    main { width: min(420px, 100%); }
+    .brand { display: flex; align-items: center; gap: 12px; justify-content: center; margin-bottom: 18px; }
+    .brand img { width: 52px; height: 52px; border-radius: 14px; box-shadow: 0 10px 30px rgba(79, 70, 229, .35); }
+    .brand h1 { margin: 0; font-size: 30px; letter-spacing: -.02em; }
+    .tag { text-align: center; color: var(--muted); margin: -6px 0 22px; }
+    .card { background: var(--card); border: 1px solid var(--line); border-radius: 20px; padding: 22px; box-shadow: 0 20px 60px rgba(15, 23, 42, .12); }
+    .tabs { display: grid; grid-template-columns: 1fr 1fr; background: var(--field); border: 1px solid var(--line); border-radius: 12px; padding: 4px; margin-bottom: 18px; }
+    .tabs button { border: 0; background: transparent; color: var(--muted); font: inherit; font-weight: 600; padding: 9px; border-radius: 9px; cursor: pointer; }
+    .tabs button[aria-selected="true"] { background: var(--card); color: var(--text); box-shadow: 0 1px 3px rgba(0, 0, 0, .12); }
+    label { display: block; font-weight: 600; font-size: 13px; margin: 12px 0 6px; }
+    .field { position: relative; }
+    input { width: 100%; font: inherit; color: var(--text); background: var(--field); border: 1px solid var(--line); border-radius: 12px; padding: 12px 14px; outline: none; }
+    input:focus { border-color: var(--accent); box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 22%, transparent); }
+    .peek { position: absolute; right: 8px; top: 50%; transform: translateY(-50%); border: 0; background: transparent; color: var(--muted); font: inherit; font-size: 13px; font-weight: 600; cursor: pointer; padding: 6px; }
+    .btn { width: 100%; margin-top: 18px; border: 0; border-radius: 12px; padding: 13px; font: inherit; font-weight: 700; color: #fff; cursor: pointer;
+      background: linear-gradient(135deg, var(--accent-2), #4f46e5); box-shadow: 0 8px 22px rgba(79, 70, 229, .35); }
+    .btn[disabled] { opacity: .65; cursor: progress; }
+    .link { border: 0; background: none; color: var(--accent); font: inherit; font-weight: 600; cursor: pointer; padding: 0; }
+    .row { display: flex; justify-content: flex-end; margin-top: 10px; }
+    .msg { min-height: 20px; margin: 12px 0 0; font-size: 14px; color: var(--err); }
+    .msg.ok { color: var(--ok); }
+    .hint { color: var(--muted); font-size: 13px; margin: 8px 0 0; }
+    .foot { text-align: center; color: var(--muted); font-size: 13px; margin-top: 18px; }
+    [hidden] { display: none !important; }
+  </style>
+</head>
+<body>
+  <main>
+    <div class="brand"><img src="icons/icon-192.png" alt=""><h1>Nudge</h1></div>
+    <p class="tag">Remember everything. Effortlessly.</p>
+    <div class="card">
+      <div class="tabs" role="tablist">
+        <button role="tab" id="tabIn" aria-selected="true">Sign in</button>
+        <button role="tab" id="tabUp" aria-selected="false">Create account</button>
+      </div>
+
+      <form id="signin" autocomplete="on">
+        <label for="inEmail">Email</label>
+        <input id="inEmail" name="email" type="email" autocomplete="username" required>
+        <label for="inPw">Password</label>
+        <div class="field"><input id="inPw" name="password" type="password" autocomplete="current-password" required><button type="button" class="peek">Show</button></div>
+        <div class="row"><button type="button" class="link" id="toReset">Forgot password?</button></div>
+        <button class="btn" type="submit">Sign in</button>
+      </form>
+
+      <form id="signup" autocomplete="on" hidden>
+        <label for="upName">Your name</label>
+        <input id="upName" name="name" autocomplete="name" maxlength="60">
+        <label for="upEmail">Email</label>
+        <input id="upEmail" name="email" type="email" autocomplete="username" required>
+        <p class="hint">Nudge is in private beta: use the email address you were invited with.</p>
+        <label for="upPw">Password</label>
+        <div class="field"><input id="upPw" name="password" type="password" autocomplete="new-password" minlength="8" required><button type="button" class="peek">Show</button></div>
+        <label for="upPw2">Confirm password</label>
+        <input id="upPw2" type="password" autocomplete="new-password" minlength="8" required>
+        <button class="btn" type="submit">Create account</button>
+      </form>
+
+      <form id="reset" autocomplete="on" hidden>
+        <p class="hint" style="margin-top:0">Ask the person who invited you for a password reset code, then choose a new password.</p>
+        <label for="rsEmail">Email</label>
+        <input id="rsEmail" type="email" autocomplete="username" required>
+        <label for="rsCode">Reset code</label>
+        <input id="rsCode" placeholder="ABCD-1234" autocomplete="one-time-code" required>
+        <label for="rsPw">New password</label>
+        <div class="field"><input id="rsPw" type="password" autocomplete="new-password" minlength="8" required><button type="button" class="peek">Show</button></div>
+        <button class="btn" type="submit">Set new password</button>
+        <div class="row" style="justify-content:center"><button type="button" class="link" id="backIn">Back to sign in</button></div>
+      </form>
+      <p class="msg" id="msg" role="alert"></p>
+    </div>
+    <p class="foot">Your reminders sync to your account, so you can use Nudge on your phone and computer.</p>
+  </main>
+  <script src="config.js"></script>
+  <script type="module">
+    import { loginKey, apiBase, authFetch, setSession, getSession } from "./auth.js";
+    const $ = (s) => document.querySelector(s);
+    const next = () => location.replace("./" + location.search);
+    if (!apiBase()) next();                       // accounts not set up: open the app directly
+    else if (getSession()) next();                // already signed in
+
+    const forms = { signin: $("#signin"), signup: $("#signup"), reset: $("#reset") };
+    const msg = (t, ok) => { $("#msg").textContent = t || ""; $("#msg").classList.toggle("ok", Boolean(ok)); };
+    function show(name) {
+      for (const [k, f] of Object.entries(forms)) f.hidden = k !== name;
+      $("#tabIn").setAttribute("aria-selected", String(name === "signin"));
+      $("#tabUp").setAttribute("aria-selected", String(name === "signup"));
+      document.querySelector(".tabs").hidden = name === "reset";
+      msg("");
+      const first = forms[name].querySelector("input"); if (first && !first.value) first.focus();
+    }
+    $("#tabIn").onclick = () => show("signin");
+    $("#tabUp").onclick = () => show("signup");
+    $("#toReset").onclick = () => { $("#rsEmail").value = $("#inEmail").value; show("reset"); };
+    $("#backIn").onclick = () => show("signin");
+    if (location.hash === "#signup") show("signup");
+    for (const b of document.querySelectorAll(".peek")) b.onclick = () => { const i = b.previousElementSibling; i.type = i.type === "password" ? "text" : "password"; b.textContent = i.type === "password" ? "Show" : "Hide"; };
+
+    async function run(form, fn) {
+      const btn = form.querySelector(".btn"); const label = btn.textContent;
+      btn.disabled = true; btn.textContent = "Please wait…"; msg("");
+      try {
+        const r = await fn();
+        setSession({ token: r.token, user: r.user, api: apiBase() });
+        msg("Signed in. Opening Nudge…", true);
+        next();
+      } catch (e) { msg(e.message); btn.disabled = false; btn.textContent = label; }
+    }
+    forms.signin.onsubmit = (e) => { e.preventDefault(); const email = $("#inEmail").value.trim();
+      run(forms.signin, async () => authFetch("/auth/login", { method: "POST", body: { email, key: await loginKey(email, $("#inPw").value) } })); };
+    forms.signup.onsubmit = (e) => { e.preventDefault(); const email = $("#upEmail").value.trim(); const pw = $("#upPw").value;
+      if (pw.length < 8) return msg("Use a password of at least 8 characters");
+      if (pw !== $("#upPw2").value) return msg("The passwords don't match");
+      run(forms.signup, async () => authFetch("/auth/signup", { method: "POST", body: { email, name: $("#upName").value.trim(), key: await loginKey(email, pw) } })); };
+    forms.reset.onsubmit = (e) => { e.preventDefault(); const email = $("#rsEmail").value.trim(); const pw = $("#rsPw").value;
+      if (pw.length < 8) return msg("Use a password of at least 8 characters");
+      run(forms.reset, async () => authFetch("/auth/reset", { method: "POST", body: { email, code: $("#rsCode").value, key: await loginKey(email, pw) } })); };
+  </script>
+</body>
+</html>

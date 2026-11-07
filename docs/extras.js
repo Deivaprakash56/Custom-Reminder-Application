@@ -1,4 +1,5 @@
 "use strict";
+if (window.NUDGE_REDIRECTING) throw new Error("Opening the sign-in page");
 // extras.js — features layered on top of app.js through its hooks:
 // alarm sounds, attachments, calendar (.ics + view), habits, focus timer, insights, morning briefing,
 // location reminders, push notifications, encrypted sync, AI fallback, biometric unlock, shortcuts & share.
@@ -647,13 +648,24 @@ hooks.afterSave.push(() => setTimeout(geoSync, 0));
 document.addEventListener("visibilitychange", geoSync);
 
 // ================================================================== companion server: push + sync + AI proxy
-const serverUrl = () => String(db.settings.server || "").trim().replace(/\/+$/, "");
+// With an account, the server is the one the site is configured with (config.js); otherwise the user's own.
+const serverUrl = () => String((SESSION ? SESSION.api || (window.NUDGE_CONFIG || {}).api : db.settings.server) || "").trim().replace(/\/+$/, "");
 async function api(path, { method = "GET", body } = {}) {
   if (!serverUrl()) throw new Error("Add your server URL in Settings first");
-  const res = await fetch(serverUrl() + path, { method, headers: body ? { "Content-Type": "application/json" } : {}, body: body ? JSON.stringify(body) : undefined });
+  const headers = body ? { "Content-Type": "application/json" } : {};
+  if (SESSION) headers.Authorization = `Bearer ${SESSION.token}`;
+  let res;
+  try { res = await fetch(serverUrl() + path, { method, headers, body: body ? JSON.stringify(body) : undefined }); }
+  catch { throw new Error("You're offline. Changes are saved on this device and will sync later."); }
   const j = await res.json().catch(() => ({}));
+  if (res.status === 401 && SESSION && /^\/(me|auth)\//.test(path)) { sessionExpired(); throw new Error("Please sign in again"); }
   if (!res.ok && res.status !== 409) throw new Error(j.error || `Server error ${res.status}`);
   return { status: res.status, ...j };
+}
+function sessionExpired() {
+  try { localStorage.removeItem("nudge.session"); } catch { /* ignore */ }
+  toast("Your session ended. Please sign in again.");
+  setTimeout(() => location.replace("login.html"), 1200);
 }
 function deviceId() {
   let id = null;
@@ -713,7 +725,8 @@ hooks.afterSave.push(() => { if (!db.settings.push) return; clearTimeout(pushTim
 
 // ---------------------------------------------------------------- end-to-end encrypted sync
 const SYNC_COLS = ["reminders", "todos", "board", "notes", "folders", "habits", "places", "focusLog"];
-const SYNC_BASE = "reminders-pro.syncbase";
+const SYNC_BASE = SESSION ? `nudge.syncbase.${SESSION.user.id}` : "reminders-pro.syncbase";
+const accountSync = () => Boolean(SESSION);
 const sync = { key: null, id: null, busy: false, again: false, applying: false, status: "", timer: null };
 async function sha256(text) { return new Uint8Array(await crypto.subtle.digest("SHA-256", enc.encode(text))); }
 async function syncSetup(pass) {
@@ -754,11 +767,13 @@ function mergeDb(base, local, remote) {
   return out;
 }
 async function sealJSON(obj) {
+  if (accountSync()) return JSON.stringify(obj); // account data is protected by the sign-in; the Private folder stays encrypted
   const iv = rand(12);
   const ct = await crypto.subtle.encrypt({ name: "AES-GCM", iv }, sync.key, enc.encode(JSON.stringify(obj)));
   return JSON.stringify({ v: 1, iv: b64(iv), data: b64(ct) });
 }
 async function openJSON(str) {
+  if (accountSync()) return JSON.parse(str);
   const o = JSON.parse(str);
   try { return JSON.parse(dec.decode(await crypto.subtle.decrypt({ name: "AES-GCM", iv: unb64(o.iv) }, sync.key, unb64(o.data)))); } catch { throw new Error("Wrong sync code for this data"); }
 }
@@ -775,39 +790,74 @@ function applyMerged(m) {
   render();
 }
 async function syncNow(manual) {
-  if (!db.settings.sync || !serverUrl() || !sync.key) return;
+  if (!accountSync() && (!db.settings.sync || !serverUrl() || !sync.key)) return;
   if (sync.busy) { sync.again = true; return; }
+  const path = accountSync() ? "/me/data" : `/sync/${sync.id}`;
   sync.busy = true; syncStatus("Syncing…");
   try {
     for (let attempt = 0; attempt < 4; attempt++) {
-      const remote = await api(`/sync/${sync.id}`);
+      const remote = await api(path);
       const remoteObj = remote.data ? await openJSON(remote.data) : null;
       let base = null; try { base = JSON.parse(localStorage.getItem(SYNC_BASE)); } catch { /* none */ }
       const local = syncPart(db);
       const merged = remoteObj ? mergeDb(base, local, remoteObj) : local;
-      const put = await api(`/sync/${sync.id}`, { method: "PUT", body: { baseRev: remote.rev, data: await sealJSON(merged) } });
+      const put = await api(path, { method: "PUT", body: { baseRev: remote.rev, data: await sealJSON(merged) } });
       if (put.status === 409) continue;
       applyMerged(merged);
       try { localStorage.setItem(SYNC_BASE, JSON.stringify(merged)); } catch { /* storage full */ }
       syncStatus(`Synced at ${timeText(new Date())}`);
       if (manual) toast("Synced");
-      return;
+      sync.lastOk = Date.now();
+      return true;
     }
     throw new Error("Too many changes at once — try again");
   } catch (e) {
     syncStatus(`Sync failed: ${e.message}`);
     if (manual) toast(`Sync failed: ${e.message}`);
+    return false;
   } finally {
     sync.busy = false;
     if (sync.again) { sync.again = false; setTimeout(syncNow, 800); }
   }
 }
-hooks.afterSave.push(() => { if (!db.settings.sync || sync.applying || !sync.key) return; clearTimeout(sync.timer); sync.timer = setTimeout(syncNow, 4000); });
+hooks.afterSave.push(() => { if (sync.applying || !(accountSync() || (db.settings.sync && sync.key))) return; clearTimeout(sync.timer); sync.timer = setTimeout(syncNow, accountSync() ? 2500 : 4000); });
+window.addEventListener("online", () => syncNow());
+if (accountSync()) setTimeout(() => syncNow(), 400);
 setInterval(() => { if (!document.hidden) syncNow(); }, 120000);
 document.addEventListener("visibilitychange", () => { if (!document.hidden) syncNow(); });
 (async () => {
-  try { const pass = localStorage.getItem("reminders.syncpass"); if (pass && db.settings.sync) { await syncSetup(pass); syncNow(); } } catch (e) { console.warn("sync init", e); }
+  try { const pass = localStorage.getItem("reminders.syncpass"); if (!accountSync() && pass && db.settings.sync) { await syncSetup(pass); syncNow(); } } catch (e) { console.warn("sync init", e); }
 })();
+async function signOut() {
+  if (!(await syncNow())) {
+    if (!confirm("Some changes haven't reached the server yet (are you offline?). Sign out anyway and lose them on this device?")) return;
+  }
+  try { await api("/auth/logout", { method: "POST" }); } catch { /* signed out locally anyway */ }
+  try { if (db.settings.push) await disablePush(); } catch { /* ignore */ }
+  try { localStorage.removeItem(KEY); localStorage.removeItem(SYNC_BASE); localStorage.removeItem("nudge.session"); } catch { /* ignore */ }
+  location.replace("login.html");
+}
+async function changeAccountPassword(cur, next, again) {
+  if (next.length < 8) throw new Error("Use a new password of at least 8 characters");
+  if (next !== again) throw new Error("The new passwords don't match");
+  const { loginKey } = await import("./auth.js");
+  const email = SESSION.user.email;
+  const r = await api("/auth/password", { method: "POST", body: { key: await loginKey(email, cur), newKey: await loginKey(email, next) } });
+  SESSION.token = r.token; localStorage.setItem("nudge.session", JSON.stringify(SESSION));
+}
+function accountSection() {
+  if (!SESSION) return null;
+  const u = SESSION.user;
+  const cur = h("input", { type: "password", class: "mini-select", placeholder: "Current password", autocomplete: "current-password", "aria-label": "Current password" });
+  const nw = h("input", { type: "password", class: "mini-select", placeholder: "New password", autocomplete: "new-password", "aria-label": "New password" });
+  const nw2 = h("input", { type: "password", class: "mini-select", placeholder: "Repeat new password", autocomplete: "new-password", "aria-label": "Repeat new password" });
+  return [h("h3", {}, "Account"),
+    row(u.name || u.email, u.name ? u.email : "Signed in",
+      h("button", { class: "btn ghost sm", onclick: () => syncNow(true) }, icon("cloud", 13), "Sync now"),
+      h("button", { class: "btn ghost sm", onclick: (e) => busy(e.target, signOut) }, "Sign out")),
+    h("p", { class: "muted small", id: "syncStatus" }, sync.status || "Your reminders, notes and lists sync to your account automatically. Attachments and custom sounds stay on each device."),
+    row("Change password", null, cur, nw, nw2, h("button", { class: "btn primary sm", onclick: (e) => busy(e.target, async () => { await changeAccountPassword(cur.value, nw.value, nw2.value); toast("Password changed. Other devices will need to sign in again."); }) }, "Change"))];
+}
 function newSyncCode() {
   const alphabet = "abcdefghjkmnpqrstuvwxyzABCDEFGHJKLMNPQRSTUVWXYZ23456789";
   const b = rand(20); let s = "";
@@ -939,6 +989,7 @@ $("#vaultBio").addEventListener("click", async () => {
 const row = (label, desc, ...right) => h("div", { class: "set-row" }, h("div", {}, h("div", { class: "set-label" }, label), desc ? h("div", { class: "muted small" }, desc) : null), h("div", { class: "row-btns" }, right));
 const busy = async (btn, fn) => { const t = btn.textContent; btn.disabled = true; btn.textContent = "Working…"; try { await fn(); } catch (e) { toast(e.message); } finally { btn.disabled = false; btn.textContent = t; openSettings(); } };
 hooks.settings.push(({ toggle, s }) => [
+  accountSection(),
   h("h3", {}, "Look & sound"),
   row("Accent colour", null, h("div", { class: "swatches small" }, Object.entries(ACCENTS).map(([k, v]) => h("button", { type: "button", class: `swatch${s.accent === k ? " on" : ""}`, style: `--c:${v[0]}`, "aria-label": k, title: k, onclick: () => { s.accent = k; save(); applyTheme(); openSettings(); } })))),
   row("Alarm sound", null,
@@ -978,16 +1029,16 @@ hooks.settings.push(({ toggle, s }) => [
       bioSupported() ? "Uses your device's screen lock (WebAuthn). Your password still works." : "Not available in this browser.",
       db.vault.bio ? h("button", { class: "btn ghost sm", onclick: () => { const { bio, ...rest } = db.vault; db.vault = rest; save(); openSettings(); } }, "Turn off")
         : h("button", { class: "btn primary sm", disabled: !bioSupported(), onclick: (e) => { const go = () => busy(e.target, async () => { await bioEnable(); toast("Fingerprint unlock is on"); }); if (unlocked()) go(); else requireVault(go); } }, icon("finger", 14), "Turn on"))] : null,
-  h("h3", {}, "Companion server (push · sync · AI)"),
-  h("p", { class: "muted small" }, "Optional. Deploy the free Cloudflare Worker in push-worker/ (see the README) and paste its URL here to get notifications when the app is closed, sync between devices and a server-side AI key."),
-  row("Server URL", null, h("input", { class: "mini-select wide", placeholder: "https://reminders-push.<you>.workers.dev", value: s.server || "", "aria-label": "Server URL", onchange: (e) => { s.server = e.target.value.trim(); save(); } }),
+  h("h3", {}, SESSION ? "Notifications" : "Companion server (push · sync · AI)"),
+  SESSION ? null : h("p", { class: "muted small" }, "Optional. Deploy the free Cloudflare Worker in push-worker/ (see the README) and paste its URL here to get notifications when the app is closed, sync between devices and a server-side AI key."),
+  SESSION ? null : row("Server URL", null, h("input", { class: "mini-select wide", placeholder: "https://reminders-push.<you>.workers.dev", value: s.server || "", "aria-label": "Server URL", onchange: (e) => { s.server = e.target.value.trim(); save(); } }),
     h("button", { class: "btn ghost sm", onclick: (e) => busy(e.target, async () => { const r = await api("/health"); toast(`Server OK · push ${r.push ? "ready" : "not configured"} · AI ${r.ai ? "ready" : "off"}`); }) }, "Check")),
   row("Push notifications", s.push ? "On — reminders arrive even when the app is closed." : "Get reminders when the app is closed.",
     s.push ? [h("button", { class: "btn ghost sm", onclick: (e) => busy(e.target, async () => { const r = await api(`/device/${deviceId()}/test`, { method: "POST" }); toast(r.ok ? "Test notification sent" : `Push service said ${r.status}`); }) }, "Send test"),
       h("button", { class: "btn ghost sm", onclick: (e) => busy(e.target, disablePush) }, "Turn off")]
-      : h("button", { class: "btn primary sm", disabled: !s.server, onclick: (e) => busy(e.target, async () => { await enablePush(); toast("Push notifications are on"); }) }, icon("bell", 13), "Turn on")),
+      : h("button", { class: "btn primary sm", disabled: !serverUrl(), onclick: (e) => busy(e.target, async () => { await enablePush(); toast("Push notifications are on"); }) }, icon("bell", 13), "Turn on")),
   s.push ? toggle("pushTitles", "Show reminder titles in push messages", "Off = notifications just say “Reminder” (private reminders never show their title).", () => pushSchedule(true).catch(() => {})) : null,
-  (() => {
+  SESSION ? null : (() => {
     let pass = ""; try { pass = localStorage.getItem("reminders.syncpass") || ""; } catch { /* ignore */ }
     const inp = h("input", { class: "mini-select wide mono", value: pass || newSyncCode(), "aria-label": "Sync code", spellcheck: "false" });
     return [row("Sync between devices", s.sync ? "On. Use the same sync code on your other devices." : "End-to-end encrypted: the server only stores data it can't read. Use the same code on every device.",
@@ -999,7 +1050,7 @@ hooks.settings.push(({ toggle, s }) => [
   })(),
   h("h3", {}, "AI assistant (Claude)"),
   toggle("ai", "Use AI when the assistant doesn't understand", "Unclear requests are sent to Claude (claude-opus-5-5) to work out what you meant. Only that one sentence is sent."),
-  s.ai ? row("Anthropic API key", s.server ? "Leave empty to use the key stored on your companion server." : "Stored only in this browser. Anyone with access to this device could read it.",
+  s.ai ? row("Anthropic API key", serverUrl() ? "Leave empty to use the key stored on your companion server." : "Stored only in this browser. Anyone with access to this device could read it.",
     h("input", { type: "password", class: "mini-select wide", value: s.aiKey || "", placeholder: "sk-ant-…", autocomplete: "off", "aria-label": "Anthropic API key", onchange: (e) => { s.aiKey = e.target.value.trim(); save(); } })) : null,
 ]);
 

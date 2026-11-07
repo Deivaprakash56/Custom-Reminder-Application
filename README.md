@@ -26,7 +26,10 @@ board, habits, the focus timer, weekly insights, the private folder and the phon
 
 `docs/` is a static, installable web app (PWA) with an offline cache and a home-screen icon.
 GitHub Pages serves it from branch `main`, folder `/docs` (the root `index.html` redirects there too).
-Open the link, tap **Install app** (or **Add to Home screen**), then **Enable notifications**.
+Open the link and tap **Install** on the "Install Nudge" bar (phones) or **Install app** in the side menu.
+Where the browser can't install by itself, Nudge shows the steps: on **iPhone**, open the link in
+Safari, tap **Share** → **Add to Home Screen**; on **Android**, Chrome's **⋮** menu → **Install app**.
+Then turn on notifications.
 
 ### Organise
 
@@ -98,6 +101,62 @@ There is no password recovery: "Forgot password?" wipes the private items.
 - **Share to the app:** share text or a link from another app and save it as a reminder, note or to-do.
 - Light/dark themes, 8 accent colours, phone layout, export/import backups (Settings → Backup).
 - Tasks from the first version of the app are moved into the Personal folder automatically.
+
+## Beta accounts: sign-in, sign-up and where the data lives
+
+When a server is configured, Nudge shows a **sign-in page** (`docs/login.html`) with **Create account**
+and **Forgot password?**. Only email addresses you approve can create an account. Each account's data
+syncs across that person's phone and computer, and still works offline.
+
+### Set it up (once)
+
+1. Deploy the companion worker (steps in the next section). This version adds an `Accounts` store, so
+   run `npx wrangler deploy` again if you deployed it before.
+2. Create your admin password (a long random string) and store it on the worker:
+   ```bash
+   cd push-worker
+   node -e "console.log(require('crypto').randomBytes(24).toString('base64url'))"
+   npx wrangler secret put ADMIN_TOKEN
+   ```
+3. Put the worker URL in `docs/config.js` and commit it (it is public; it's not a secret):
+   ```js
+   window.NUDGE_CONFIG = { api: "https://reminders-push.<you>.workers.dev" };
+   ```
+   From then on, everyone who opens the app is asked to sign in. With `api: ""` Nudge runs without
+   accounts, exactly as before.
+
+### Run the beta (`docs/admin.html`)
+
+Open **https://deivaprakash56.github.io/Custom-Reminder-Application/docs/admin.html**, paste the
+server URL and your `ADMIN_TOKEN`, and tap **Connect**. There you can:
+
+- **Approve emails**: paste testers' addresses. Send them the app link; they tap **Create account**.
+- See every **account**: when they joined, last signed in and last synced, and how much data they have.
+- **Reset password**: gives a one-time code (valid 48 hours) to send the tester. They tap
+  **Forgot password?**, enter the code and choose a new password. All their other devices are signed out.
+- **Pause** or **Resume** an account, **Export** someone's data as JSON (for support or backup), or
+  **Delete** an account with all of its data.
+
+### Where the data is stored
+
+| What | Where |
+|---|---|
+| Accounts, approved emails, sessions, reset codes | One Cloudflare Durable Object (`Accounts`) on your worker |
+| Each user's reminders, to-dos, notes, habits, folders | That user's own Durable Object (one per account), up to about 1.8 MB each |
+| Private folder | Same place, but **end-to-end encrypted** with the user's private-folder password; the server can't read it |
+| Photos/files attached to reminders, custom alarm sounds | Only on the device where they were added (IndexedDB) |
+| A working copy of the user's data | The browser's local storage, so Nudge opens instantly and works offline; changes sync when online |
+
+- **Passwords** never leave the device in readable form: the browser stretches them with PBKDF2
+  (200,000 rounds) and the server stores a salted hash of that. Six wrong attempts lock sign-in for
+  15 minutes. Sessions last 60 days and are renewed while in use; **Sign out** (Settings → Account)
+  also removes that account's data from the device.
+- **Cost:** Cloudflare's free plan includes Durable Objects with SQLite storage, which is plenty for a
+  beta (thousands of users). Watch usage in the Cloudflare dashboard → Workers → `reminders-push`.
+- **Backups:** use **Export** in the admin page for individual users. Users can also download their
+  own backup in Settings → Backup.
+- Data other than the Private folder is readable by whoever controls the Cloudflare account (you),
+  like most cloud apps. Tell your testers that, and use the Private folder for sensitive items.
 
 ## Companion server (optional): push, sync, AI key
 
@@ -198,6 +257,7 @@ python3 -m unittest discover -s tests -v     # PC server
 node --test tests/test_nlp.js                # voice / natural-language parser, incl. Tamil (Node 18+)
 node --test tests/test_webpush.mjs           # Web Push encryption against the RFC 8291 test vector
 node --test tests/test_worker.mjs            # companion worker: schedule, alarms, nagging, sync
+node --test tests/test_accounts.mjs          # beta accounts: approved sign-up, sign-in, lockout, reset, admin
 ```
 
 ## Files
@@ -206,8 +266,9 @@ node --test tests/test_worker.mjs            # companion worker: schedule, alarm
 docs/              phone app for GitHub Pages: index.html, app.js (UI, storage, vault,
                    reminders, assistant), extras.js (calendar, habits, focus, insights,
                    briefing, location, push, sync, AI, biometrics, sounds, attachments),
-                   nlp.js (English + Tamil parser), style.css, sw.js (offline + push), manifest
-push-worker/       optional Cloudflare Worker: Web Push, encrypted sync, AI proxy
+                   nlp.js (English + Tamil parser), style.css, sw.js (offline + push), manifest,
+                   login.html + auth.js (sign-in / sign-up), admin.html (beta admin), config.js
+push-worker/       optional Cloudflare Worker: Web Push, encrypted sync, AI proxy, beta accounts
 server.py          HTTP server, JSON API, SQLite store, reminder scheduler
 static/index.html  page
 static/app.js      UI logic, polling, in-page and browser notifications
@@ -219,5 +280,5 @@ run.sh             start and open the browser
 data/tasks.db      your tasks (created on first run)
 ```
 
-> **Security:** there is no login. Keep the default (localhost only), and use `--lan`
+> **Security:** the PC server edition has no login (the phone app's beta accounts don't apply to it). Keep the default (localhost only), and use `--lan`
 > only on a network you trust.
